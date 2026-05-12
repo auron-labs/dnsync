@@ -8,7 +8,7 @@ type = "adguard"
 name = "primary-adguard"
 url = "http://127.0.0.1:3000"
 username = "admin"
-password_env = "ADGUARD_PASSWORD"
+password = "local-test-password"
 
 [state]
 path = "./state/ownership.json"
