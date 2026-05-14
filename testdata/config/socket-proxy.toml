@@ -1,6 +1,7 @@
 [[sources]]
 type = "docker"
 name = "socket-proxy"
+# TCP socket proxy or remote Docker example.
 endpoint = "tcp://docker-socket-proxy:2375"
 
 [[outputs]]
@@ -8,10 +9,10 @@ type = "adguard"
 name = "primary-adguard"
 url = "http://127.0.0.1:3000"
 username = "admin"
-password = "local-test-password"
+password_ref = "ENV:ADGUARD_PASSWORD"
 
 [state]
-path = "./state/ownership.json"
+path = "/var/lib/docker-dns-sync/state.json"
 
 [logging]
 level = "info"
