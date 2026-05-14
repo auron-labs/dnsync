@@ -1,13 +1,14 @@
 [[sources]]
 type = "docker"
 name = "local-docker"
-# Local Docker socket example. For proxy or remote Docker access, start from
-# testdata/config/socket-proxy.toml instead.
+# Host-oriented local Docker socket example. For container deployment, start from
+# testdata/config/docker-container.toml or testdata/config/socket-proxy.toml instead.
 endpoint = "unix:///var/run/docker.sock"
 
 [[outputs]]
 type = "adguard"
 name = "primary-adguard"
+# Host-binary example: AdGuard is reachable on the same machine.
 url = "http://127.0.0.1:3000"
 username = "admin"
 password_ref = "ENV:ADGUARD_PASSWORD"

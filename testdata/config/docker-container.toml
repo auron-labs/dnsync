@@ -1,0 +1,26 @@
+[[sources]]
+type = "docker"
+name = "local-docker"
+# Container deployment example using a mounted Docker socket.
+endpoint = "unix:///var/run/docker.sock"
+
+[[outputs]]
+type = "adguard"
+name = "primary-adguard"
+# Replace with the network-reachable AdGuard URL inside your container network.
+url = "http://adguardhome:3000"
+username = "admin"
+password_ref = "ENV:ADGUARD_PASSWORD"
+
+[state]
+# This path must stay writable by the container process.
+path = "/var/lib/docker-dns-sync/state.json"
+
+[logging]
+level = "info"
+format = "json"
+
+[retry]
+initial_interval = "1s"
+max_interval = "30s"
+max_elapsed_time = "5m"
