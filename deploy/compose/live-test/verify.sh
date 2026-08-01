@@ -37,6 +37,9 @@ COMPOSE_LOG="$TMP_DIR/compose.log"
 ADGUARD_CONF_DIR="$RUNTIME_DIR/adguard/conf"
 ADGUARD_WORK_DIR="$RUNTIME_DIR/adguard/work"
 STATE_DIR="$RUNTIME_DIR/state"
+LOG_FILE_PATH="$STATE_DIR/runtime.log"
+STATE_SNAPSHOT_PATH="$TMP_DIR/state.snapshot.json"
+LOG_SNAPSHOT_PATH="$TMP_DIR/runtime.log.snapshot"
 
 mkdir -p "$ADGUARD_CONF_DIR" "$ADGUARD_WORK_DIR" "$STATE_DIR"
 cp -a "$REPO_ROOT/deploy/compose/live-test/adguard/conf/." "$ADGUARD_CONF_DIR/"
@@ -169,6 +172,25 @@ wait_for_rewrite() {
 	wait_until 90 2 "AdGuard did not report the expected rewrite for $domain" rewrite_present "$domain" "$answer"
 }
 
+copy_container_file() {
+	container_id=$(docker compose -f "$COMPOSE_FILE" ps -q docker-dns-sync)
+	destination=$2
+	rm -f "$destination"
+	docker cp "$container_id:$1" "$destination" >/dev/null 2>&1
+}
+
+state_has_removal_deadline() {
+	copy_container_file /var/lib/docker-dns-sync/state.json "$STATE_SNAPSHOT_PATH" && grep -q '"remove_after"' "$STATE_SNAPSHOT_PATH"
+}
+
+state_has_no_removal_deadline() {
+	copy_container_file /var/lib/docker-dns-sync/state.json "$STATE_SNAPSHOT_PATH" && ! grep -q '"remove_after"' "$STATE_SNAPSHOT_PATH"
+}
+
+log_file_present() {
+	copy_container_file /var/lib/docker-dns-sync/runtime.log "$LOG_SNAPSHOT_PATH" && test -s "$LOG_SNAPSHOT_PATH"
+}
+
 adguard_ready() {
 	adguard_request "$ADGUARD_URL/control/rewrite/list" >/dev/null
 }
@@ -206,6 +228,13 @@ run_compose up -d --force-recreate --no-deps whoami
 wait_for_rewrite "$MANAGED_DOMAIN" "$MANAGED_ORIGINAL_ANSWER"
 wait_for_dns "$MANAGED_DOMAIN" "$MANAGED_ORIGINAL_ANSWER"
 
+log "verify: checking persisted removal grace and cancellation"
+run_compose stop whoami
+wait_until 30 1 "state did not persist the removal grace deadline" state_has_removal_deadline
+run_compose up -d --force-recreate --no-deps whoami
+wait_for_rewrite "$MANAGED_DOMAIN" "$MANAGED_ORIGINAL_ANSWER"
+wait_until 30 1 "state did not clear the cancelled removal deadline" state_has_no_removal_deadline
+
 log "verify: creating manual rewrite"
 create_manual_rewrite || fail "failed to create manual rewrite"
 wait_for_rewrite "$MANUAL_DOMAIN" "$MANUAL_ANSWER"
@@ -217,6 +246,12 @@ log "verify: verifying restart recovery preserves rewrites"
 wait_for_rewrite "$MANAGED_DOMAIN" "$MANAGED_ORIGINAL_ANSWER"
 wait_for_dns "$MANAGED_DOMAIN" "$MANAGED_ORIGINAL_ANSWER"
 wait_for_rewrite "$MANUAL_DOMAIN" "$MANUAL_ANSWER"
+
+wait_until 30 1 "dual log file sink was not created" log_file_present
+grep -q 'starting docker-dns-sync runtime' "$LOG_SNAPSHOT_PATH" || fail "log file sink did not contain structured runtime records"
+
+log_permissions=$(stat -c '%a' "$LOG_SNAPSHOT_PATH" 2>/dev/null || stat -f '%Lp' "$LOG_SNAPSHOT_PATH")
+[ "$log_permissions" = "600" ] || fail "expected rotated log file mode 600, got $log_permissions"
 
 log "verify: skipping stale-delete live assertion; AdGuard visible rewrites do not expose unique provenance for same-key ownership proof"
 

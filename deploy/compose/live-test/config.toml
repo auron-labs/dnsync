@@ -16,6 +16,11 @@ path = "/var/lib/docker-dns-sync/state.json"
 [logging]
 level = "debug"
 format = "text"
+max_size_mb = 1
+max_backups = 2
+
+[runtime]
+removal_grace_period = "10s"
 
 [retry]
 initial_interval = "1s"

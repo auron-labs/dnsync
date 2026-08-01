@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -15,6 +16,7 @@ import (
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
 	"github.com/cloudflare/cloudflare-go/v6/dns"
 	"github.com/cloudflare/cloudflare-go/v6/option"
+	"github.com/cloudflare/cloudflare-go/v6/zero_trust"
 	"github.com/cloudflare/cloudflare-go/v6/zones"
 )
 
@@ -103,6 +105,7 @@ func (p *Provider) ListVisible(ctx context.Context) ([]contracts.VisibleRecord, 
 			Provenance: &contracts.RecordProvenance{
 				RemoteID: record.ID,
 			},
+			Proxied: record.Proxied,
 		})
 		for _, key := range visibleRecordKeys(hostname, answer, zoneName) {
 			nextVisible[key] = visibleRecordMeta{id: record.ID}
@@ -121,7 +124,7 @@ func (p *Provider) ListVisible(ctx context.Context) ([]contracts.VisibleRecord, 
 }
 
 func (p *Provider) Create(ctx context.Context, desired contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
-	body, err := buildRecordNewBody(desired.Hostname, desired.Answer)
+	body, err := buildRecordNewBody(desired.Hostname, desired.Answer, desired.Proxied)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +180,7 @@ func (p *Provider) Update(ctx context.Context, visible contracts.VisibleRecord, 
 		return nil, err
 	}
 
-	body, err := buildRecordUpdateBody(desired.Hostname, desired.Answer)
+	body, err := buildRecordUpdateBody(desired.Hostname, desired.Answer, desired.Proxied)
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +207,113 @@ func (p *Provider) Delete(ctx context.Context, visible contracts.VisibleRecord) 
 		return wrapCloudflareTemporary(fmt.Errorf("delete cloudflare dns record: %w", err))
 	}
 
+	return nil
+}
+
+func (p *Provider) EnsureTunnel(ctx context.Context, accountID, name, managedID string) (contracts.TunnelInfo, error) {
+	accountID = strings.TrimSpace(accountID)
+	name = strings.TrimSpace(name)
+	managedID = strings.TrimSpace(managedID)
+	if accountID == "" || name == "" {
+		return contracts.TunnelInfo{}, errors.New("cloudflare tunnel account ID and name are required")
+	}
+
+	iter := p.client.ZeroTrust.Tunnels.Cloudflared.ListAutoPaging(ctx, zero_trust.TunnelCloudflaredListParams{
+		AccountID: cloudflare.F(accountID),
+		Name:      cloudflare.F(name),
+		IsDeleted: cloudflare.F(false),
+	})
+	matches := make([]contracts.TunnelInfo, 0, 1)
+	for iter.Next() {
+		tunnel := iter.Current()
+		if tunnel.Name != name || string(tunnel.ConfigSrc) != "cloudflare" || !tunnel.DeletedAt.IsZero() {
+			continue
+		}
+		matches = append(matches, contracts.TunnelInfo{ID: tunnel.ID, Name: tunnel.Name})
+	}
+	if err := iter.Err(); err != nil {
+		return contracts.TunnelInfo{}, wrapCloudflareTemporary(fmt.Errorf("list cloudflare tunnels: %w", err))
+	}
+	if len(matches) > 1 {
+		return contracts.TunnelInfo{}, fmt.Errorf("cloudflare tunnel name %q is ambiguous", name)
+	}
+	if len(matches) == 1 {
+		if managedID == "" {
+			return contracts.TunnelInfo{}, fmt.Errorf("cloudflare tunnel name %q is already in use by an unowned tunnel", name)
+		}
+		if managedID != "" && matches[0].ID != managedID {
+			return contracts.TunnelInfo{}, fmt.Errorf("cloudflare tunnel name %q resolves to %s, not managed tunnel %s", name, matches[0].ID, managedID)
+		}
+		return matches[0], nil
+	}
+	created, err := p.client.ZeroTrust.Tunnels.Cloudflared.New(ctx, zero_trust.TunnelCloudflaredNewParams{
+		AccountID: cloudflare.F(accountID),
+		Name:      cloudflare.F(name),
+		ConfigSrc: cloudflare.F(zero_trust.TunnelCloudflaredNewParamsConfigSrcCloudflare),
+	})
+	if err != nil {
+		return contracts.TunnelInfo{}, wrapCloudflareTemporary(fmt.Errorf("create cloudflare tunnel: %w", err))
+	}
+	return contracts.TunnelInfo{ID: created.ID, Name: created.Name}, nil
+}
+
+func (p *Provider) TunnelToken(ctx context.Context, accountID, tunnelID string) (string, error) {
+	token, err := p.client.ZeroTrust.Tunnels.Cloudflared.Token.Get(ctx, strings.TrimSpace(tunnelID), zero_trust.TunnelCloudflaredTokenGetParams{
+		AccountID: cloudflare.F(strings.TrimSpace(accountID)),
+	})
+	if err != nil {
+		return "", wrapCloudflareTemporary(fmt.Errorf("get cloudflare tunnel token: %w", err))
+	}
+	if token == nil || strings.TrimSpace(*token) == "" {
+		return "", errors.New("cloudflare tunnel token response was empty")
+	}
+	return *token, nil
+}
+
+func (p *Provider) ConfigureTunnel(ctx context.Context, accountID, tunnelID string, routes []contracts.DesiredTunnelRoute) error {
+	sorted := append([]contracts.DesiredTunnelRoute(nil), routes...)
+	sort.Slice(sorted, func(i, j int) bool {
+		left, right := normalizeHostname(sorted[i].Hostname), normalizeHostname(sorted[j].Hostname)
+		if left != right {
+			return left < right
+		}
+		return sorted[i].Service < sorted[j].Service
+	})
+
+	ingress := make([]zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress, 0, len(sorted)+1)
+	for _, route := range sorted {
+		ingress = append(ingress, zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
+			Hostname: cloudflare.F(normalizeHostname(route.Hostname)),
+			Service:  cloudflare.F(strings.TrimSpace(route.Service)),
+		})
+	}
+	ingress = append(ingress, zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfigIngress{
+		Service: cloudflare.F("http_status:404"),
+	})
+
+	_, err := p.client.ZeroTrust.Tunnels.Cloudflared.Configurations.Update(ctx, strings.TrimSpace(tunnelID), zero_trust.TunnelCloudflaredConfigurationUpdateParams{
+		AccountID: cloudflare.F(strings.TrimSpace(accountID)),
+		Config: cloudflare.F(zero_trust.TunnelCloudflaredConfigurationUpdateParamsConfig{
+			Ingress: cloudflare.F(ingress),
+		}),
+	})
+	if err != nil {
+		return wrapCloudflareTemporary(fmt.Errorf("configure cloudflare tunnel: %w", err))
+	}
+	return nil
+}
+
+func (p *Provider) DeleteTunnel(ctx context.Context, accountID, tunnelID string) error {
+	_, err := p.client.ZeroTrust.Tunnels.Cloudflared.Delete(ctx, strings.TrimSpace(tunnelID), zero_trust.TunnelCloudflaredDeleteParams{
+		AccountID: cloudflare.F(strings.TrimSpace(accountID)),
+	})
+	if err != nil {
+		var apiErr *cloudflare.Error
+		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+			return nil
+		}
+		return wrapCloudflareTemporary(fmt.Errorf("delete cloudflare tunnel: %w", err))
+	}
 	return nil
 }
 
@@ -367,7 +477,7 @@ func appendCloudflareErrorCode(codes *[]int64, seen map[int64]struct{}, code int
 	*codes = append(*codes, code)
 }
 
-func buildRecordNewBody(hostname, answer string) (dns.RecordNewParamsBodyUnion, error) {
+func buildRecordNewBody(hostname, answer string, proxied bool) (dns.RecordNewParamsBodyUnion, error) {
 	name := normalizeHostname(hostname)
 	content := normalizeAnswer(answer)
 	if name == "" {
@@ -382,6 +492,7 @@ func buildRecordNewBody(hostname, answer string) (dns.RecordNewParamsBodyUnion, 
 			return dns.ARecordParam{
 				Name:    cloudflare.F(name),
 				Content: cloudflare.F(content),
+				Proxied: cloudflare.F(proxied),
 				TTL:     cloudflare.F(dns.TTL(1)),
 				Type:    cloudflare.F(dns.ARecordTypeA),
 			}, nil
@@ -390,6 +501,7 @@ func buildRecordNewBody(hostname, answer string) (dns.RecordNewParamsBodyUnion, 
 		return dns.AAAARecordParam{
 			Name:    cloudflare.F(name),
 			Content: cloudflare.F(content),
+			Proxied: cloudflare.F(proxied),
 			TTL:     cloudflare.F(dns.TTL(1)),
 			Type:    cloudflare.F(dns.AAAARecordTypeAAAA),
 		}, nil
@@ -398,12 +510,13 @@ func buildRecordNewBody(hostname, answer string) (dns.RecordNewParamsBodyUnion, 
 	return dns.CNAMERecordParam{
 		Name:    cloudflare.F(name),
 		Content: cloudflare.F(content),
+		Proxied: cloudflare.F(proxied),
 		TTL:     cloudflare.F(dns.TTL(1)),
 		Type:    cloudflare.F(dns.CNAMERecordTypeCNAME),
 	}, nil
 }
 
-func buildRecordUpdateBody(hostname, answer string) (dns.RecordUpdateParamsBodyUnion, error) {
+func buildRecordUpdateBody(hostname, answer string, proxied bool) (dns.RecordUpdateParamsBodyUnion, error) {
 	name := normalizeHostname(hostname)
 	content := normalizeAnswer(answer)
 	if name == "" {
@@ -418,6 +531,7 @@ func buildRecordUpdateBody(hostname, answer string) (dns.RecordUpdateParamsBodyU
 			return dns.ARecordParam{
 				Name:    cloudflare.F(name),
 				Content: cloudflare.F(content),
+				Proxied: cloudflare.F(proxied),
 				TTL:     cloudflare.F(dns.TTL(1)),
 				Type:    cloudflare.F(dns.ARecordTypeA),
 			}, nil
@@ -426,6 +540,7 @@ func buildRecordUpdateBody(hostname, answer string) (dns.RecordUpdateParamsBodyU
 		return dns.AAAARecordParam{
 			Name:    cloudflare.F(name),
 			Content: cloudflare.F(content),
+			Proxied: cloudflare.F(proxied),
 			TTL:     cloudflare.F(dns.TTL(1)),
 			Type:    cloudflare.F(dns.AAAARecordTypeAAAA),
 		}, nil
@@ -434,6 +549,7 @@ func buildRecordUpdateBody(hostname, answer string) (dns.RecordUpdateParamsBodyU
 	return dns.CNAMERecordParam{
 		Name:    cloudflare.F(name),
 		Content: cloudflare.F(content),
+		Proxied: cloudflare.F(proxied),
 		TTL:     cloudflare.F(dns.TTL(1)),
 		Type:    cloudflare.F(dns.CNAMERecordTypeCNAME),
 	}, nil

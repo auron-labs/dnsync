@@ -4,7 +4,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/aaronflorey/docker-dns-sync/ci.yaml?branch=main&style=flat-square&label=ci)](https://github.com/aaronflorey/docker-dns-sync/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/aaronflorey/docker-dns-sync?display_name=tag&style=flat-square)](https://github.com/aaronflorey/docker-dns-sync/releases)
 
-`docker-dns-sync` is a Go daemon that watches Godoxy-labeled Docker workloads and keeps daemon-owned AdGuard Home DNS rewrites in sync.
+`docker-dns-sync` is a Go daemon that watches Godoxy-labeled Docker workloads and keeps daemon-owned AdGuard Home and Cloudflare DNS records in sync. An optional label-driven Cloudflare Tunnel lifecycle creates a dedicated remote tunnel and managed `cloudflared` sidecar.
 
 ## Installation
 
@@ -19,6 +19,8 @@
 - Watches Docker for container lifecycle hints and reruns reconciliation after changes.
 - Retries temporary AdGuard failures with bounded backoff before giving up.
 - Only deletes stale remote rewrites when exactly one visible record carries non-empty daemon-owned provenance; same-key records without provenance, ambiguous duplicates, and unrelated manual records are preserved instead of being deleted on label changes alone.
+- A global removal grace period defaults to ten minutes and applies consistently to daemon-owned DNS records and tunnel resources; updates remain immediate.
+- Logs are structured on stdout and can be duplicated to a concurrency-safe rotating `LOG_FILE` sink.
 
 ## Configuration
 
@@ -44,6 +46,13 @@ Required config sections:
 For Docker sources, set `sources[].host_ip` to the host-reachable IP address that unlabeled records should answer with. Explicit `proxy.<alias>.host`, `proxy.#<n>.host`, and `proxy.*.host` labels still override that shared source IP.
 
 Use `password_ref = "ENV:ADGUARD_PASSWORD"` instead of embedding credentials in committed config.
+
+For Cloudflare Tunnel configuration, use `api_key_ref = "ENV:CLOUDFLARE_API_KEY"`
+and the optional `[outputs.tunnel]` block described in
+[configuration](docs/configuration.md). The API token needs Zone DNS write and
+Account Tunnel write permissions. The Docker socket (or proxy) additionally
+needs container, image, and network write access so the daemon can manage the
+connector sidecar. Never grant or document real tokens inline.
 
 ## Development
 

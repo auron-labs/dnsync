@@ -220,6 +220,59 @@ func TestDesiredRecordDerivationDetailedReportsSafeEmptyAnswerTargetDiagnostics(
 	}
 }
 
+func TestTunnelRouteDerivationUsesIPv4AndIgnoresNormalDNSOptOut(t *testing.T) {
+	t.Parallel()
+
+	provider := contracts.ProviderRef{Type: "docker", Name: "local"}
+	container := containertypes.Summary{
+		ID:    "ctr-tunnel",
+		Names: []string{"/web"},
+		State: containertypes.StateRunning,
+		Labels: map[string]string{
+			"proxy.cloudflare.tunnel": "TrUe",
+			"proxy.dns":               "false",
+			"proxy.aliases":           "app",
+			"proxy.app.port":          "8080",
+		},
+		NetworkSettings: &containertypes.NetworkSettingsSummary{Networks: map[string]*network.EndpointSettings{
+			"z-network": {NetworkID: "network-v6", IPAddress: netip.MustParseAddr("2001:db8::10")},
+			"a-network": {NetworkID: "network-v4", IPAddress: netip.MustParseAddr("10.0.0.10")},
+		}},
+	}
+
+	records, routes, diagnostics := deriveDesiredSnapshotDetailed(provider, "", "example.test", container)
+	if len(records) != 0 {
+		t.Fatalf("expected proxy.dns=false to suppress ordinary records, got %+v", records)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatalf("expected no tunnel diagnostics, got %+v", diagnostics)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("expected one tunnel route, got %+v", routes)
+	}
+	if routes[0].Service != "http://10.0.0.10:8080" || len(routes[0].NetworkIDs) != 1 || routes[0].NetworkIDs[0] != "network-v4" {
+		t.Fatalf("expected deterministic IPv4 service/network, got %+v", routes[0])
+	}
+}
+
+func TestTunnelRouteDerivationRejectsInvalidPort(t *testing.T) {
+	t.Parallel()
+
+	container := containerSummary("ctr-invalid-tunnel", "/web", map[string]string{
+		"proxy.cloudflare.tunnel": "true",
+		"proxy.dns":               "false",
+		"proxy.aliases":           "app",
+		"proxy.app.port":          "65536",
+	}, "running", "10.0.0.10")
+	_, routes, diagnostics := deriveDesiredSnapshotDetailed(contracts.ProviderRef{Type: "docker", Name: "local"}, "", "", container)
+	if len(routes) != 0 {
+		t.Fatalf("expected invalid tunnel port to produce no route, got %+v", routes)
+	}
+	if len(diagnostics) != 1 || diagnostics[0].reason != "invalid tunnel port" {
+		t.Fatalf("expected invalid port diagnostic, got %+v", diagnostics)
+	}
+}
+
 func TestExcludedContainersProduceNoDesiredRecords(t *testing.T) {
 	t.Parallel()
 

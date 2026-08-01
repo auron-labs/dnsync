@@ -104,7 +104,7 @@ func TestListDesired(t *testing.T) {
 				t.Fatalf("ListDesired returned error: %v", err)
 			}
 
-			assertDesiredRecordsEqual(t, got, tt.want)
+			assertDesiredRecordsEqual(t, got.Records, tt.want)
 		})
 	}
 }
@@ -195,7 +195,7 @@ func TestListDesiredLogsSafeDiagnosticsForMissingAnswerTargets(t *testing.T) {
 		Answer:   "admin.internal",
 		Source:   contracts.SourceObjectRef{Provider: providerRef, ID: "ctr-safe-log", DisplayName: "svc"},
 	}}
-	assertDesiredRecordsEqual(t, got, want)
+	assertDesiredRecordsEqual(t, got.Records, want)
 
 	logs := buf.String()
 	for _, want := range []string{

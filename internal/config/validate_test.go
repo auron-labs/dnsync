@@ -289,6 +289,61 @@ func TestValidateSkipsDisabledOutputs(t *testing.T) {
 	}
 }
 
+func TestValidateCloudflareTunnelConfiguration(t *testing.T) {
+	t.Parallel()
+
+	tunnelOutput := OutputConfig{
+		Type:   "cloudflare",
+		Name:   "primary-cloudflare",
+		ZoneID: "zone-123",
+		APIKey: "api-token",
+		Tunnel: &TunnelConfig{AccountID: "account-123", Name: "docker-dns-sync", Source: "local-docker"},
+	}
+	cfg := validConfig()
+	cfg.Outputs = append(cfg.Outputs, tunnelOutput)
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected valid tunnel config, got %v", err)
+	}
+	if got := tunnelOutput.Tunnel.CloudflaredImage(); got != DefaultCloudflaredImage {
+		t.Fatalf("expected pinned default connector image %q, got %q", DefaultCloudflaredImage, got)
+	}
+	whitespaceImage := *tunnelOutput.Tunnel
+	whitespaceImage.ConnectorImage = "  \t "
+	if got := whitespaceImage.CloudflaredImage(); got != DefaultCloudflaredImage {
+		t.Fatalf("expected whitespace connector image to use default %q, got %q", DefaultCloudflaredImage, got)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+		want   string
+	}{
+		{name: "missing account", mutate: func(cfg *Config) { cfg.Outputs[1].Tunnel.AccountID = "" }, want: "account_id is required"},
+		{name: "unknown source", mutate: func(cfg *Config) { cfg.Outputs[1].Tunnel.Source = "other" }, want: "exactly one docker source"},
+		{name: "ambiguous source", mutate: func(cfg *Config) { cfg.Sources = append(cfg.Sources, cfg.Sources[0]) }, want: "exactly one docker source"},
+		{name: "negative grace", mutate: func(cfg *Config) { cfg.Runtime.RemovalGracePeriod = "-1s" }, want: "must be zero or greater"},
+		{name: "multiple tunnels", mutate: func(cfg *Config) {
+			second := cfg.Outputs[1]
+			second.Name = "secondary-cloudflare"
+			cfg.Outputs = append(cfg.Outputs, second)
+		}, want: "exactly one enabled cloudflare output"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			caseCfg := validConfig()
+			caseTunnel := *tunnelOutput.Tunnel
+			caseOutput := tunnelOutput
+			caseOutput.Tunnel = &caseTunnel
+			caseCfg.Outputs = append(caseCfg.Outputs, caseOutput)
+			tt.mutate(&caseCfg)
+			if err := Validate(caseCfg); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func validConfig() Config {
 	return Config{
 		Sources: []SourceConfig{{

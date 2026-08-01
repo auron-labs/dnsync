@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"sort"
 	"strings"
 
 	"github.com/aaronflorey/docker-dns-sync/internal/config"
@@ -29,6 +28,7 @@ type Provider struct {
 	defaultHost string
 	baseDomain  string
 	client      apiClient
+	sidecars    tunnelSidecarClient
 	logger      *slog.Logger
 }
 
@@ -50,6 +50,7 @@ func New(cfg config.SourceConfig, logger *slog.Logger) (*Provider, error) {
 		defaultHost: defaultAnswerTarget(cfg),
 		baseDomain:  normalizeName(cfg.BaseDomain),
 		client:      cli,
+		sidecars:    mobyTunnelSidecarClient{client: cli},
 		logger:      logger,
 	}, nil
 }
@@ -70,21 +71,21 @@ func (p *Provider) ClientHost() string {
 	return p.client.DaemonHost()
 }
 
-func (p *Provider) ListDesired(ctx context.Context) ([]contracts.DesiredRecord, error) {
+func (p *Provider) ListDesired(ctx context.Context) (contracts.DesiredSnapshot, error) {
 	result, err := p.client.ContainerList(ctx, mobyclient.ContainerListOptions{})
 	if err != nil {
 		requestErr := fmt.Errorf("list containers: %w", err)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, requestErr
+			return contracts.DesiredSnapshot{}, requestErr
 		}
-		return nil, temporaryError{err: requestErr}
+		return contracts.DesiredSnapshot{}, temporaryError{err: requestErr}
 	}
 
 	logDockerTrace(ctx, p.logger, "listed docker containers for desired record derivation",
 		"provider", providerKey(p.ref),
 	)
 
-	desired := make([]contracts.DesiredRecord, 0)
+	desired := contracts.DesiredSnapshot{}
 	for _, container := range result.Items {
 		if container.State != containertypes.StateRunning {
 			logDockerTrace(ctx, p.logger, "skipped non-running docker container during desired record derivation",
@@ -95,7 +96,7 @@ func (p *Provider) ListDesired(ctx context.Context) ([]contracts.DesiredRecord, 
 			continue
 		}
 
-		records, diagnostics := deriveDesiredRecordsDetailed(p.ref, p.defaultHost, p.baseDomain, container)
+		records, routes, diagnostics := deriveDesiredSnapshotDetailed(p.ref, p.defaultHost, p.baseDomain, container)
 		for _, diagnostic := range diagnostics {
 			args := []any{
 				"provider", providerKey(p.ref),
@@ -113,6 +114,9 @@ func (p *Provider) ListDesired(ctx context.Context) ([]contracts.DesiredRecord, 
 				args = append(args, "hint", diagnostic.hint)
 			}
 			logDockerDebug(ctx, p.logger, "skipped docker DNS record derivation", args...)
+			if diagnostic.reason == "invalid tunnel port" || diagnostic.reason == "missing container network endpoint" {
+				return contracts.DesiredSnapshot{}, fmt.Errorf("container %s tunnel derivation failed: %s", containerDisplayName(container), diagnostic.reason)
+			}
 		}
 
 		logDockerTrace(ctx, p.logger, "derived desired records from docker container",
@@ -121,14 +125,11 @@ func (p *Provider) ListDesired(ctx context.Context) ([]contracts.DesiredRecord, 
 			"display_name", containerDisplayName(container),
 		)
 
-		desired = append(desired, records...)
+		desired.Records = append(desired.Records, records...)
+		desired.TunnelRoutes = append(desired.TunnelRoutes, routes...)
 	}
 
-	sort.Slice(desired, func(i, j int) bool {
-		return desiredRecordLess(desired[i], desired[j])
-	})
-
-	return desired, nil
+	return desired.Sorted(), nil
 }
 
 const dockerTraceLevel slog.Level = slog.LevelDebug - 4

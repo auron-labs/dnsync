@@ -8,7 +8,7 @@ The persisted snapshot lives at `state.path` and is JSON encoded.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "managed_records": [
     {
       "output": { "Type": "adguard", "Name": "primary-adguard" },
@@ -32,8 +32,9 @@ The nested provider/source reference structs use Go's default exported field nam
 
 | Field | Notes |
 | --- | --- |
-| `version` | Snapshot format version. Current value: `1`. |
+| `version` | Snapshot format version. Current value: `2`; version 1 snapshots migrate automatically. |
 | `managed_records` | Managed output records owned by the daemon. |
+| `managed_tunnels` | Dedicated tunnel and connector ownership, including route deadlines and network identity. |
 | `output` | Output provider reference. |
 | `source` | Source object reference. |
 | `hostname` | Managed hostname. |
@@ -45,7 +46,7 @@ The nested provider/source reference structs use Go's default exported field nam
 - The store creates the file if it does not exist.
 - Writes are atomic.
 - The file is saved with `0600` permissions where supported.
-- A mismatched snapshot version is rejected instead of silently migrated.
+- Version 1 snapshots migrate automatically to version 2. Tunnel tokens are never persisted.
 
 ## Where it is used
 

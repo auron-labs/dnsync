@@ -16,6 +16,19 @@ url = "http://adguardhome:3000"
 username = "admin"
 password_ref = "ENV:ADGUARD_PASSWORD"
 
+# Optional: enable one dedicated Cloudflare Tunnel output. The source name must
+# match exactly one [[sources]] entry of type "docker".
+# [[outputs]]
+# type = "cloudflare"
+# name = "primary-cloudflare"
+# zone_id = "..."
+# api_key_ref = "ENV:CLOUDFLARE_API_KEY"
+# [outputs.tunnel]
+# account_id = "..."
+# name = "docker-dns-sync"
+# source = "local-docker"
+# connector_image = "cloudflare/cloudflared:2026.7.3"
+
 [state]
 # The compose file mounts ./state here for persistence across restarts.
 path = "/var/lib/docker-dns-sync/state.json"
@@ -24,10 +37,14 @@ path = "/var/lib/docker-dns-sync/state.json"
 # Supported levels: trace, debug, info, warn, error.
 level = "info"
 format = "json"
+max_size_mb = 10
+max_backups = 5
 
 [runtime]
 # Optional per-operation timeout for external API calls and similar work.
 operation_timeout = "10s"
+# Empty defaults to 10m; use 0s to disable removal grace.
+removal_grace_period = "10m"
 
 [retry]
 initial_interval = "1s"

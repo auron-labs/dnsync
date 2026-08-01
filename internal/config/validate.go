@@ -47,6 +47,7 @@ func Validate(cfg Config) error {
 		}
 	}
 
+	enabledTunnels := 0
 	for i, output := range cfg.Outputs {
 		if strings.TrimSpace(output.Type) == "" {
 			return fmt.Errorf("outputs[%d].type is required", i)
@@ -57,6 +58,9 @@ func Validate(cfg Config) error {
 		}
 
 		if !output.IsEnabled() {
+			if output.Tunnel != nil {
+				return fmt.Errorf("outputs[%d].tunnel cannot be enabled on a disabled output", i)
+			}
 			continue
 		}
 
@@ -85,7 +89,19 @@ func Validate(cfg Config) error {
 			if hasAPIKey == hasAPIKeyRef {
 				return fmt.Errorf("outputs[%d] must set exactly one of api_key or api_key_ref", i)
 			}
+			if output.Tunnel != nil {
+				enabledTunnels++
+				if enabledTunnels > 1 {
+					return errors.New("exactly one enabled cloudflare output may configure a tunnel")
+				}
+				if err := validateTunnelConfig(cfg, i, *output.Tunnel); err != nil {
+					return err
+				}
+			}
 		default:
+			if output.Tunnel != nil {
+				return fmt.Errorf("outputs[%d].tunnel is only supported for cloudflare outputs", i)
+			}
 			return fmt.Errorf("outputs[%d].type %q is not supported", i, output.Type)
 		}
 	}
@@ -107,9 +123,20 @@ func Validate(cfg Config) error {
 	default:
 		return errors.New("logging.format must be one of json or text")
 	}
+	if cfg.Logging.MaxSizeMB < 0 {
+		return errors.New("logging.max_size_mb must be greater than zero")
+	}
+	if cfg.Logging.MaxBackups < 0 {
+		return errors.New("logging.max_backups must be greater than zero")
+	}
 
 	if strings.TrimSpace(cfg.Runtime.OperationTimeout) != "" {
 		if err := validateDuration("runtime.operation_timeout", cfg.Runtime.OperationTimeout); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(cfg.Runtime.RemovalGracePeriod) != "" {
+		if err := validateNonNegativeDuration("runtime.removal_grace_period", cfg.Runtime.RemovalGracePeriod); err != nil {
 			return err
 		}
 	}
@@ -126,6 +153,33 @@ func Validate(cfg Config) error {
 		return err
 	}
 
+	return nil
+}
+
+func validateTunnelConfig(cfg Config, outputIndex int, tunnel TunnelConfig) error {
+	if strings.TrimSpace(tunnel.AccountID) == "" {
+		return fmt.Errorf("outputs[%d].tunnel.account_id is required", outputIndex)
+	}
+	if strings.TrimSpace(tunnel.Name) == "" {
+		return fmt.Errorf("outputs[%d].tunnel.name is required", outputIndex)
+	}
+	sourceName := strings.TrimSpace(tunnel.Source)
+	if sourceName == "" {
+		return fmt.Errorf("outputs[%d].tunnel.source is required", outputIndex)
+	}
+
+	matches := 0
+	for _, source := range cfg.Sources {
+		if strings.EqualFold(strings.TrimSpace(source.Type), "docker") && strings.TrimSpace(source.Name) == sourceName {
+			matches++
+		}
+	}
+	if matches != 1 {
+		return fmt.Errorf("outputs[%d].tunnel.source must identify exactly one docker source", outputIndex)
+	}
+	if strings.TrimSpace(tunnel.ConnectorImage) != "" && strings.ContainsAny(tunnel.ConnectorImage, "\r\n") {
+		return fmt.Errorf("outputs[%d].tunnel.connector_image must be a valid single-line image reference", outputIndex)
+	}
 	return nil
 }
 
@@ -169,5 +223,17 @@ func validateDuration(field string, raw string) error {
 		return fmt.Errorf("%s must be greater than zero", field)
 	}
 
+	return nil
+}
+
+func validateNonNegativeDuration(field string, raw string) error {
+	value := strings.TrimSpace(raw)
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return fmt.Errorf("%s must be a valid duration: %w", field, err)
+	}
+	if duration < 0 {
+		return fmt.Errorf("%s must be zero or greater", field)
+	}
 	return nil
 }

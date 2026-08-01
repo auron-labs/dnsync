@@ -17,6 +17,7 @@ const (
 	LevelTrace               slog.Level = slog.LevelDebug - 4
 	defaultWatchHintDebounce            = 500 * time.Millisecond
 	defaultOperationTimeout             = 10 * time.Second
+	defaultRemovalGrace                 = 10 * time.Minute
 )
 
 type RetryPolicy struct {
@@ -29,12 +30,22 @@ type RuntimeDeps struct {
 	Logger            *slog.Logger
 	LogLevel          slog.Level
 	OperationTimeout  time.Duration
+	RemovalGrace      time.Duration
 	Retry             RetryPolicy
 	WatchHintDebounce time.Duration
+	LogCloser         io.Closer
 }
 
 func NewRuntimeDeps(cfg config.Config) (RuntimeDeps, error) {
-	level, err := parseLogLevel(cfg.Logging.Level)
+	return newRuntimeDeps(cfg, os.Getenv, os.Stdout)
+}
+
+func newRuntimeDeps(cfg config.Config, getenv func(string) string, stdout io.Writer) (RuntimeDeps, error) {
+	levelName := cfg.Logging.Level
+	if envLevel := strings.TrimSpace(getenv("LOG_LEVEL")); envLevel != "" {
+		levelName = envLevel
+	}
+	level, err := parseLogLevel(levelName)
 	if err != nil {
 		return RuntimeDeps{}, err
 	}
@@ -48,24 +59,53 @@ func NewRuntimeDeps(cfg config.Config) (RuntimeDeps, error) {
 	if err != nil {
 		return RuntimeDeps{}, err
 	}
+	removalGrace, err := parseRemovalGrace(cfg.Runtime)
+	if err != nil {
+		return RuntimeDeps{}, err
+	}
 
 	handlerOptions := &slog.HandlerOptions{Level: level}
+	writers := []io.Writer{stdout}
+	var logCloser io.Closer
+	if path := strings.TrimSpace(getenv("LOG_FILE")); path != "" {
+		maxBytes := defaultLogMaxBytes
+		if cfg.Logging.MaxSizeMB > 0 {
+			maxBytes = int64(cfg.Logging.MaxSizeMB) << 20
+		}
+		backups := defaultLogBackups
+		if cfg.Logging.MaxBackups > 0 {
+			backups = cfg.Logging.MaxBackups
+		}
+		rotating, err := newRotatingFile(path, maxBytes, backups)
+		if err != nil {
+			return RuntimeDeps{}, fmt.Errorf("open LOG_FILE: %w", err)
+		}
+		writers = append(writers, rotating)
+		logCloser = rotating
+	}
+	writer := io.MultiWriter(writers...)
 	var handler slog.Handler
 	switch strings.ToLower(strings.TrimSpace(cfg.Logging.Format)) {
 	case "json":
-		handler = slog.NewJSONHandler(os.Stderr, handlerOptions)
+		handler = slog.NewJSONHandler(writer, handlerOptions)
 	case "text":
-		handler = slog.NewTextHandler(os.Stderr, handlerOptions)
+		handler = slog.NewTextHandler(writer, handlerOptions)
 	default:
-		handler = slog.NewTextHandler(io.Discard, handlerOptions)
+		if logCloser != nil {
+			_ = logCloser.Close()
+		}
+		return RuntimeDeps{}, fmt.Errorf("logging.format must be one of json or text")
 	}
+	handler = newRedactingHandler(handler, configSecrets(cfg))
 
 	return RuntimeDeps{
 		Logger:            slog.New(handler),
 		LogLevel:          level,
 		OperationTimeout:  operationTimeout,
+		RemovalGrace:      removalGrace,
 		Retry:             retry,
 		WatchHintDebounce: defaultWatchHintDebounce,
+		LogCloser:         logCloser,
 	}, nil
 }
 
@@ -124,6 +164,22 @@ func parseOperationTimeout(cfg config.RuntimeConfig) (time.Duration, error) {
 		return 0, fmt.Errorf("runtime.operation_timeout must be greater than zero")
 	}
 
+	return duration, nil
+}
+
+func parseRemovalGrace(cfg config.RuntimeConfig) (time.Duration, error) {
+	value := strings.TrimSpace(cfg.RemovalGracePeriod)
+	if value == "" {
+		return defaultRemovalGrace, nil
+	}
+
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("parse runtime.removal_grace_period: %w", err)
+	}
+	if duration < 0 {
+		return 0, fmt.Errorf("runtime.removal_grace_period must be zero or greater")
+	}
 	return duration, nil
 }
 

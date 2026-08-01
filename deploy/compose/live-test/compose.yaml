@@ -56,6 +56,7 @@ services:
         condition: service_completed_successfully
     environment:
       ADGUARD_PASSWORD: adguard-test-password
+      LOG_FILE: /var/lib/docker-dns-sync/runtime.log
     command:
       - -config
       - /etc/docker-dns-sync/config.toml

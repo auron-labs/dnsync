@@ -10,7 +10,7 @@ import (
 	"github.com/aaronflorey/docker-dns-sync/internal/state"
 )
 
-func applyReconcilePlan(ctx context.Context, output contracts.Output, owned state.Snapshot, plan reconcilePlan, now time.Time) (state.Snapshot, bool, error) {
+func applyReconcilePlan(ctx context.Context, output contracts.Output, owned state.Snapshot, plan reconcilePlan, now time.Time, persist func(state.Snapshot) error) (state.Snapshot, bool, error) {
 	recordsByLineage := make(map[string]state.ManagedRecord)
 	otherRecords := make([]state.ManagedRecord, 0, len(owned.ManagedRecords))
 	for _, record := range owned.ManagedRecords {
@@ -22,13 +22,27 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 	}
 
 	progressed := false
+	snapshot := func() state.Snapshot {
+		return snapshotWithOutputRecords(owned.ManagedTunnels, otherRecords, recordsByLineage)
+	}
+	persistAfterMutation := func() error {
+		if persist == nil {
+			return nil
+		}
+		if err := persist(snapshot()); err != nil {
+			return fmt.Errorf("persist state after external mutation: %w", err)
+		}
+		return nil
+	}
 
 	for _, drop := range plan.Drops {
 		delete(recordsByLineage, managedRecordLineageKey(drop))
 	}
 
 	for _, keep := range plan.NextManaged {
-		keep.LastAppliedAt = now
+		if keep.LastAppliedAt.IsZero() {
+			keep.LastAppliedAt = now
+		}
 		lineage := managedRecordLineageKey(keep)
 		recordsByLineage[lineage] = keep
 		if drop, ok := plan.KeepDrops[lineage]; ok {
@@ -39,45 +53,55 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 	for _, create := range plan.Creates {
 		provenance, err := output.Create(ctx, create)
 		if err != nil {
-			return snapshotWithOutputRecords(otherRecords, recordsByLineage), progressed, fmt.Errorf("create %s: %w", visibleRecordKey(create.Hostname, create.Answer), err)
+			return snapshot(), progressed, fmt.Errorf("create %s: %w", visibleRecordKey(create.Hostname, create.Answer), err)
 		}
 		lineage := desiredRecordLineageKey(output.Provider(), create)
-		recordsByLineage[lineage] = state.ManagedRecord{Output: output.Provider(), Source: create.Source, Hostname: create.Hostname, Answer: create.Answer, Provenance: copyRecordProvenance(provenance), LastAppliedAt: now}
+		recordsByLineage[lineage] = state.ManagedRecord{Output: output.Provider(), Source: create.Source, Hostname: create.Hostname, Answer: create.Answer, Proxied: create.Proxied, Provenance: copyRecordProvenance(provenance), LastAppliedAt: now}
 		if drop, ok := plan.CreateDrops[lineage]; ok {
 			delete(recordsByLineage, managedRecordLineageKey(drop))
 		}
 		progressed = true
+		if err := persistAfterMutation(); err != nil {
+			return snapshot(), progressed, err
+		}
 	}
 
 	for _, update := range plan.Updates {
 		provenance, err := output.Update(ctx, update.From, update.To)
 		if err != nil {
-			return snapshotWithOutputRecords(otherRecords, recordsByLineage), progressed, fmt.Errorf("update %s: %w", visibleRecordKey(update.From.Hostname, update.From.Answer), err)
+			return snapshot(), progressed, fmt.Errorf("update %s: %w", visibleRecordKey(update.From.Hostname, update.From.Answer), err)
 		}
 		lineage := desiredRecordLineageKey(output.Provider(), update.To)
-		recordsByLineage[lineage] = state.ManagedRecord{Output: output.Provider(), Source: update.To.Source, Hostname: update.To.Hostname, Answer: update.To.Answer, Provenance: nextManagedProvenance(provenance, update.From.Provenance), LastAppliedAt: now}
+		recordsByLineage[lineage] = state.ManagedRecord{Output: output.Provider(), Source: update.To.Source, Hostname: update.To.Hostname, Answer: update.To.Answer, Proxied: update.To.Proxied, Provenance: nextManagedProvenance(provenance, update.From.Provenance), LastAppliedAt: now}
 		if drop, ok := plan.UpdateDrops[lineage]; ok {
 			delete(recordsByLineage, managedRecordLineageKey(drop))
 		}
 		progressed = true
+		if err := persistAfterMutation(); err != nil {
+			return snapshot(), progressed, err
+		}
 	}
 
 	for _, del := range plan.Deletes {
 		// Delete the visible output record before removing its managed lineage so
 		// persistence only forgets ownership after the external mutation succeeds.
 		if err := output.Delete(ctx, del.Visible); err != nil {
-			return snapshotWithOutputRecords(otherRecords, recordsByLineage), progressed, fmt.Errorf("delete %s: %w", visibleRecordKey(del.Visible.Hostname, del.Visible.Answer), err)
+			return snapshot(), progressed, fmt.Errorf("delete %s: %w", visibleRecordKey(del.Visible.Hostname, del.Visible.Answer), err)
 		}
 		delete(recordsByLineage, managedRecordLineageKey(del.Managed))
 		progressed = true
+		if err := persistAfterMutation(); err != nil {
+			return snapshot(), progressed, err
+		}
 	}
 
-	return snapshotWithOutputRecords(otherRecords, recordsByLineage), progressed, nil
+	return snapshot(), progressed, nil
 }
 
-func snapshotWithOutputRecords(otherRecords []state.ManagedRecord, recordsByLineage map[string]state.ManagedRecord) state.Snapshot {
+func snapshotWithOutputRecords(tunnels []state.ManagedTunnel, otherRecords []state.ManagedRecord, recordsByLineage map[string]state.ManagedRecord) state.Snapshot {
 	next := state.EmptySnapshot()
 	next.ManagedRecords = append(next.ManagedRecords, otherRecords...)
+	next.ManagedTunnels = append(next.ManagedTunnels, tunnels...)
 
 	lineages := make([]string, 0, len(recordsByLineage))
 	for lineage := range recordsByLineage {

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"sort"
+	"time"
 
 	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
 	"github.com/aaronflorey/docker-dns-sync/internal/state"
@@ -16,6 +17,7 @@ type reconcilePlan struct {
 	UpdateDrops  map[string]state.ManagedRecord
 	KeepDrops    map[string]state.ManagedRecord
 	Ambiguities  []*ErrVisibleRecordAmbiguous
+	Blocked      []state.ManagedRecord
 	NextManaged  []state.ManagedRecord
 	AppliedIndex map[string]state.ManagedRecord
 }
@@ -26,6 +28,10 @@ type reconcileDeleteCall struct {
 }
 
 func buildReconcilePlan(output contracts.ProviderRef, desired []contracts.DesiredRecord, visible []contracts.VisibleRecord, owned state.Snapshot) reconcilePlan {
+	return buildReconcilePlanAt(output, desired, visible, owned, time.Now().UTC(), 0)
+}
+
+func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.DesiredRecord, visible []contracts.VisibleRecord, owned state.Snapshot, now time.Time, grace time.Duration) reconcilePlan {
 	pl := reconcilePlan{
 		AppliedIndex: make(map[string]state.ManagedRecord),
 		CreateDrops:  make(map[string]state.ManagedRecord),
@@ -130,6 +136,13 @@ func buildReconcilePlan(output contracts.ProviderRef, desired []contracts.Desire
 				pl.Creates = append(pl.Creates, d)
 				continue
 			}
+			if visibleByKey[newKey][0].Proxied != d.Proxied && canUpdateOwnedVisibleRecord(ownedRecord, visibleByKey[newKey][0], matchedByHostnameOnly) {
+				if ownedLineage != lineage {
+					pl.UpdateDrops[lineage] = ownedRecord
+				}
+				pl.Updates = append(pl.Updates, reconcileUpdateCall{From: visibleByKey[newKey][0], To: d})
+				continue
+			}
 			provenance := copyRecordProvenance(ownedRecord.Provenance)
 			if sameRecordProvenance(ownedRecord.Provenance, visibleByKey[newKey][0].Provenance) {
 				provenance = copyRecordProvenance(visibleByKey[newKey][0].Provenance)
@@ -142,6 +155,7 @@ func buildReconcilePlan(output contracts.ProviderRef, desired []contracts.Desire
 				Source:     d.Source,
 				Hostname:   d.Hostname,
 				Answer:     d.Answer,
+				Proxied:    d.Proxied,
 				Provenance: provenance,
 			})
 			continue
@@ -160,12 +174,25 @@ func buildReconcilePlan(output contracts.ProviderRef, desired []contracts.Desire
 		if _, keep := desiredByLineage[lineage]; keep {
 			continue
 		}
+		if grace > 0 && (m.RemoveAfter == nil || m.RemoveAfter.After(now)) {
+			if m.RemoveAfter == nil {
+				deadline := now.Add(grace)
+				m.RemoveAfter = &deadline
+			}
+			pl.NextManaged = append(pl.NextManaged, m)
+			continue
+		}
 		if visible, ok := staleOwnedDeleteVisibleRecord(m, visibleByKey); ok {
 			pl.Deletes = append(pl.Deletes, reconcileDeleteCall{Visible: visible, Managed: m})
 			continue
 		}
 		if shouldRetainManagedRecordWithoutProof(m, visibleByHostname) {
+			// The record remains owned for safety, but this cleanup cannot be
+			// proven. Do not retain an already-expired deadline: doing so would
+			// schedule immediate reconciles forever.
+			m.RemoveAfter = nil
 			pl.NextManaged = append(pl.NextManaged, m)
+			pl.Blocked = append(pl.Blocked, m)
 			continue
 		}
 		pl.Drops = append(pl.Drops, m)

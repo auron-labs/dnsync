@@ -214,6 +214,34 @@ func TestPersistedManagedRecords(t *testing.T) {
 	})
 }
 
+func TestApplyReconcilePlanPersistsAfterEachExternalMutation(t *testing.T) {
+	t.Parallel()
+	provider := contracts.ProviderRef{Type: "cloudflare", Name: "primary"}
+	source := contracts.SourceObjectRef{Provider: contracts.ProviderRef{Type: "docker", Name: "local"}, ID: "ctr"}
+	output := &reconcileFakeOutput{provider: provider}
+	plan := reconcilePlan{Creates: []contracts.DesiredRecord{{Hostname: "one.example.test", Answer: "10.0.0.1", Source: source}, {Hostname: "two.example.test", Answer: "10.0.0.2", Source: source}}, CreateDrops: map[string]state.ManagedRecord{}, UpdateDrops: map[string]state.ManagedRecord{}, KeepDrops: map[string]state.ManagedRecord{}}
+	var snapshots []state.Snapshot
+	_, progressed, err := applyReconcilePlan(context.Background(), output, state.EmptySnapshot(), plan, time.Now().UTC(), func(snapshot state.Snapshot) error { snapshots = append(snapshots, snapshot); return nil })
+	if err != nil || !progressed {
+		t.Fatalf("apply plan: progressed=%v err=%v", progressed, err)
+	}
+	if len(snapshots) != 2 || len(snapshots[0].ManagedRecords) != 1 || len(snapshots[1].ManagedRecords) != 2 {
+		t.Fatalf("expected durable state after each mutation, got %+v", snapshots)
+	}
+}
+
+func TestExpiredUnsafeCleanupClearsRemovalDeadline(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 8, 1, 8, 0, 0, 0, time.UTC)
+	past := now.Add(-time.Minute)
+	output := contracts.ProviderRef{Type: "adguard", Name: "primary"}
+	owned := state.Snapshot{ManagedRecords: []state.ManagedRecord{{Output: output, Source: contracts.SourceObjectRef{Provider: contracts.ProviderRef{Type: "docker", Name: "local"}, ID: "ctr"}, Hostname: "app.example.test", Answer: "10.0.0.2", RemoveAfter: &past}}}
+	plan := buildReconcilePlanAt(output, nil, []contracts.VisibleRecord{{Output: output, Hostname: "app.example.test", Answer: "10.0.0.99"}}, owned, now, time.Minute)
+	if len(plan.Blocked) != 1 || len(plan.NextManaged) != 1 || plan.NextManaged[0].RemoveAfter != nil {
+		t.Fatalf("blocked cleanup retained an expired deadline: %+v", plan)
+	}
+}
+
 type reconcileFakeOutputFailCreate struct {
 	provider contracts.ProviderRef
 	err      error

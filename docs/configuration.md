@@ -70,6 +70,39 @@ Required when `type = "cloudflare"` and enabled:
 
 `api_key_ref` must use the `ENV:` prefix, for example `ENV:CLOUDFLARE_API_KEY`.
 
+#### Optional Cloudflare Tunnel
+
+At most one enabled Cloudflare output may contain a tunnel configuration. It
+must name exactly one configured Docker source. The API token needs Zone DNS
+write and Account Tunnel write permissions.
+
+```toml
+[[outputs]]
+type = "cloudflare"
+name = "primary-cloudflare"
+zone_id = "..."
+api_key_ref = "ENV:CLOUDFLARE_API_KEY"
+
+[outputs.tunnel]
+account_id = "..."
+name = "docker-dns-sync"
+source = "local-docker"
+connector_image = "cloudflare/cloudflared:2026.7.3"
+```
+
+Set `proxy.cloudflare.tunnel=true` on a running workload alongside its usual
+aliases and ports. Tunnel routes use HTTP origins and the selected Docker
+network endpoint. `proxy.exclude=true` remains the highest-priority opt-out;
+tunnel opt-in is independent of `proxy.dns`. A tunnel route publishes a
+proxied CNAME to `<tunnel-id>.cfargotunnel.com` on the selected Cloudflare
+output and suppresses that hostname's ordinary Cloudflare record. AdGuard
+records retain their existing behavior.
+
+The daemon creates and owns a dedicated remotely managed tunnel and a managed
+`cloudflared` sidecar. The sidecar requires Docker container, image, and
+network write operations. A same-name unmanaged tunnel or sidecar is an
+ownership conflict and is never adopted.
+
 ## State
 
 | Key | Required | Notes |
@@ -83,13 +116,22 @@ State is written atomically with JSON encoding and `0600` permissions where supp
 | Key | Allowed values | Notes |
 | --- | --- | --- |
 | `level` | `debug`, `info`, `warn`, `error` | Invalid values fail validation. |
-| `format` | `json`, `text` | Output is written to stderr. |
+| `format` | `json`, `text` | Structured records are written to stdout. |
+| `max_size_mb` | positive integer | Maximum active log size before rotation; defaults to 10 MiB. |
+| `max_backups` | positive integer | Number of numbered backups retained; defaults to 5. |
+
+Logs always go to stdout. A nonblank `LOG_FILE` adds an identical rotating
+file sink, creates parent directories, and uses `0600` permissions. `LOG_LEVEL`
+overrides `logging.level`; a file-open failure stops startup. `LOG_FILE.1`
+through `LOG_FILE.5` are retained by default. CLI parsing and fatal errors stay
+on stderr.
 
 ## Runtime
 
 | Key | Notes |
 | --- | --- |
 | `operation_timeout` | Optional Go duration string. Defaults to `10s`. Applied per source/output read or write operation (`ListDesired`, `ListVisible`, `Create`, `Update`, `Delete`). |
+| `removal_grace_period` | Optional non-negative Go duration. Defaults to `10m`; `0s` removes immediately. It applies globally to daemon-owned AdGuard records, Cloudflare records, tunnel CNAMEs, and tunnel routes. |
 
 This timeout is not a global reconcile deadline and does not wrap long-lived `Watch(ctx)` streams. Retry handling starts only after an operation returns successfully or fails, including when it fails by timing out.
 
@@ -113,6 +155,11 @@ Docker sources interpret these labels:
 - `proxy.<alias>.port` defines a named alias.
 - `proxy.#<n>.port` and `proxy.*.port` provide indexed and wildcard ports.
 - `proxy.<alias>.host`, `proxy.#<n>.host`, and `proxy.*.host` override the answer target.
+- `proxy.cloudflare.tunnel=true` enables a Cloudflare Tunnel route for each
+  existing alias/port. Only the case-insensitive value `true` enables it;
+  other nonblank values are reported as safe derivation diagnostics. Tunnel
+  ports must be numeric from 1 through 65535. The first non-empty network
+  endpoint is selected with IPv4 preferred over IPv6.
 
 When a container stops producing a desired record because labels changed, stale remote cleanup is only attempted when the output can prove exactly one visible same-key record is daemon-owned. That proof requires non-empty daemon-owned provenance on the visible record. Same-key matches without provenance, ambiguous duplicates, and unmanaged/manual records are preserved to avoid deleting operator-owned DNS. In practice, providers that cannot surface that provenance during listing leave the remote record in place even if local ownership was previously tracked.
 

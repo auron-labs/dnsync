@@ -48,12 +48,18 @@ func (s *Store) Load() (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("decode state file: %w", err)
 	}
 
-	if snapshot.Version != SnapshotVersion {
+	if snapshot.Version != 1 && snapshot.Version != SnapshotVersion {
 		return Snapshot{}, fmt.Errorf("unsupported state snapshot version %d", snapshot.Version)
+	}
+	if snapshot.Version == 1 {
+		snapshot.Version = SnapshotVersion
 	}
 
 	if snapshot.ManagedRecords == nil {
 		snapshot.ManagedRecords = []ManagedRecord{}
+	}
+	if snapshot.ManagedTunnels == nil {
+		snapshot.ManagedTunnels = []ManagedTunnel{}
 	}
 
 	return snapshot, nil
@@ -63,6 +69,9 @@ func (s *Store) Save(snapshot Snapshot) error {
 	snapshot.Version = SnapshotVersion
 	if snapshot.ManagedRecords == nil {
 		snapshot.ManagedRecords = []ManagedRecord{}
+	}
+	if snapshot.ManagedTunnels == nil {
+		snapshot.ManagedTunnels = []ManagedTunnel{}
 	}
 
 	payload, err := json.MarshalIndent(snapshot, "", "  ")

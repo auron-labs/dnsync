@@ -615,7 +615,9 @@ func TestAppRunStartupDeletesSeededStaleOwnedRecordWithMatchingProvenanceAndPers
 			deleteObserved <- snapshot
 		},
 	}
-	app := New(testRuntimeConfig(statePath))
+	cfg := testRuntimeConfig(statePath)
+	cfg.Runtime.RemovalGracePeriod = "0s"
+	app := New(cfg)
 	app.registry = testRegistry(
 		stubSourceFactory{source: &startupSourceStub{provider: sourceRef.Provider}},
 		stubOutputFactory{output: output},
@@ -2106,12 +2108,12 @@ func (s *deadlineObservingSourceStub) Provider() contracts.ProviderRef {
 	return s.provider
 }
 
-func (s *deadlineObservingSourceStub) ListDesired(ctx context.Context) ([]contracts.DesiredRecord, error) {
+func (s *deadlineObservingSourceStub) ListDesired(ctx context.Context) (contracts.DesiredSnapshot, error) {
 	deadline, _ := ctx.Deadline()
 	s.mu.Lock()
 	s.listDesiredDeadline = deadline
 	s.mu.Unlock()
-	return nil, nil
+	return contracts.DesiredSnapshot{}, nil
 }
 
 func (s *deadlineObservingSourceStub) observedDeadline() time.Time {
@@ -2124,7 +2126,7 @@ func (s *startupSourceStub) Provider() contracts.ProviderRef {
 	return s.provider
 }
 
-func (s *startupSourceStub) ListDesired(context.Context) ([]contracts.DesiredRecord, error) {
+func (s *startupSourceStub) ListDesired(context.Context) (contracts.DesiredSnapshot, error) {
 	s.mu.Lock()
 	s.listDesiredCalls++
 	call := s.listDesiredCalls
@@ -2137,13 +2139,13 @@ func (s *startupSourceStub) ListDesired(context.Context) ([]contracts.DesiredRec
 		if msg == "" {
 			msg = "transient source failure"
 		}
-		return nil, stubFailure(msg, true)
+		return contracts.DesiredSnapshot{}, stubFailure(msg, true)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	desired := append([]contracts.DesiredRecord(nil), s.desired...)
-	return desired, nil
+	return contracts.DesiredSnapshot{Records: desired}, nil
 }
 
 func (s *startupSourceStub) listDesiredCallCount() int {
@@ -2222,14 +2224,14 @@ func (s *blockingSourceStub) Provider() contracts.ProviderRef {
 	return s.provider
 }
 
-func (s *blockingSourceStub) ListDesired(ctx context.Context) ([]contracts.DesiredRecord, error) {
+func (s *blockingSourceStub) ListDesired(ctx context.Context) (contracts.DesiredSnapshot, error) {
 	deadline, _ := ctx.Deadline()
 	s.mu.Lock()
 	s.listDesiredCalls++
 	s.listDesiredDeadline = deadline
 	s.mu.Unlock()
 	<-ctx.Done()
-	return nil, deadlineExceededFailure(ctx.Err())
+	return contracts.DesiredSnapshot{}, deadlineExceededFailure(ctx.Err())
 }
 
 func (s *blockingSourceStub) observedDeadline() time.Time {
@@ -2248,11 +2250,11 @@ func (s *errorSourceStub) Provider() contracts.ProviderRef {
 	return s.provider
 }
 
-func (s *errorSourceStub) ListDesired(context.Context) ([]contracts.DesiredRecord, error) {
+func (s *errorSourceStub) ListDesired(context.Context) (contracts.DesiredSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.listDesiredCalls++
-	return nil, s.err
+	return contracts.DesiredSnapshot{}, s.err
 }
 
 func (s *errorSourceStub) listDesiredCallCount() int {

@@ -11,6 +11,7 @@ type VisibleRecord struct {
 	Hostname   string
 	Answer     string
 	Provenance *RecordProvenance
+	Proxied    bool
 }
 
 type Output interface {
@@ -19,4 +20,16 @@ type Output interface {
 	Create(context.Context, DesiredRecord) (*RecordProvenance, error)
 	Update(context.Context, VisibleRecord, DesiredRecord) (*RecordProvenance, error)
 	Delete(context.Context, VisibleRecord) error
+}
+
+type TunnelInfo struct {
+	ID   string
+	Name string
+}
+
+type TunnelOutput interface {
+	EnsureTunnel(context.Context, string, string, string) (TunnelInfo, error)
+	ConfigureTunnel(context.Context, string, string, []DesiredTunnelRoute) error
+	TunnelToken(context.Context, string, string) (string, error)
+	DeleteTunnel(context.Context, string, string) error
 }

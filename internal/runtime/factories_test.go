@@ -169,8 +169,8 @@ func (f fakeSource) Provider() contracts.ProviderRef {
 	return f.provider
 }
 
-func (fakeSource) ListDesired(context.Context) ([]contracts.DesiredRecord, error) {
-	return nil, nil
+func (fakeSource) ListDesired(context.Context) (contracts.DesiredSnapshot, error) {
+	return contracts.DesiredSnapshot{}, nil
 }
 
 type fakeOutput struct {

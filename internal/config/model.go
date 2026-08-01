@@ -1,5 +1,7 @@
 package config
 
+import "strings"
+
 type Config struct {
 	Sources []SourceConfig `toml:"sources"`
 	Outputs []OutputConfig `toml:"outputs"`
@@ -18,20 +20,41 @@ type SourceConfig struct {
 }
 
 type OutputConfig struct {
-	Type        string `toml:"type"`
-	Name        string `toml:"name"`
-	Enabled     *bool  `toml:"enabled"`
-	URL         string `toml:"url"`
-	Username    string `toml:"username"`
-	Password    string `toml:"password"`
-	PasswordRef string `toml:"password_ref"`
-	ZoneID      string `toml:"zone_id"`
-	APIKey      string `toml:"api_key"`
-	APIKeyRef   string `toml:"api_key_ref"`
+	Type        string        `toml:"type"`
+	Name        string        `toml:"name"`
+	Enabled     *bool         `toml:"enabled"`
+	URL         string        `toml:"url"`
+	Username    string        `toml:"username"`
+	Password    string        `toml:"password"`
+	PasswordRef string        `toml:"password_ref"`
+	ZoneID      string        `toml:"zone_id"`
+	APIKey      string        `toml:"api_key"`
+	APIKeyRef   string        `toml:"api_key_ref"`
+	Tunnel      *TunnelConfig `toml:"tunnel"`
 }
 
 func (c OutputConfig) IsEnabled() bool {
 	return c.Enabled == nil || *c.Enabled
+}
+
+const DefaultCloudflaredImage = "cloudflare/cloudflared:2026.7.3"
+
+type TunnelConfig struct {
+	AccountID      string `toml:"account_id"`
+	Name           string `toml:"name"`
+	Source         string `toml:"source"`
+	ConnectorImage string `toml:"connector_image"`
+}
+
+func (c *TunnelConfig) IsEnabled() bool {
+	return c != nil
+}
+
+func (c *TunnelConfig) CloudflaredImage() string {
+	if c == nil || strings.TrimSpace(c.ConnectorImage) == "" {
+		return DefaultCloudflaredImage
+	}
+	return strings.TrimSpace(c.ConnectorImage)
 }
 
 type StateConfig struct {
@@ -39,12 +62,15 @@ type StateConfig struct {
 }
 
 type LoggingConfig struct {
-	Level  string `toml:"level"`
-	Format string `toml:"format"`
+	Level      string `toml:"level"`
+	Format     string `toml:"format"`
+	MaxSizeMB  int    `toml:"max_size_mb"`
+	MaxBackups int    `toml:"max_backups"`
 }
 
 type RuntimeConfig struct {
-	OperationTimeout string `toml:"operation_timeout"`
+	OperationTimeout   string `toml:"operation_timeout"`
+	RemovalGracePeriod string `toml:"removal_grace_period"`
 }
 
 type RetryConfig struct {

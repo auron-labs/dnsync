@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,8 +96,43 @@ func TestStoreLoadLegacySnapshotWithoutProvenance(t *testing.T) {
 	if len(snapshot.ManagedRecords) != 1 {
 		t.Fatalf("expected 1 managed record, got %d", len(snapshot.ManagedRecords))
 	}
+	if snapshot.Version != SnapshotVersion {
+		t.Fatalf("expected legacy snapshot to migrate to version %d, got %d", SnapshotVersion, snapshot.Version)
+	}
 	if snapshot.ManagedRecords[0].Provenance != nil {
 		t.Fatalf("expected legacy record provenance to remain nil, got %+v", snapshot.ManagedRecords[0].Provenance)
+	}
+}
+
+func TestStoreSaveLoadRoundTripsTunnelStateWithoutToken(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "state.json")
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	deadline := time.Date(2026, 8, 1, 5, 10, 0, 0, time.UTC)
+	want := Snapshot{
+		ManagedRecords: []ManagedRecord{{Hostname: "app.example.com", Answer: "tunnel-id.cfargotunnel.com", Proxied: true, RemoveAfter: &deadline}},
+		ManagedTunnels: []ManagedTunnel{{Output: contracts.ProviderRef{Type: "cloudflare", Name: "primary"}, Source: contracts.ProviderRef{Type: "docker", Name: "local"}, AccountID: "account", Name: "docker-dns-sync", TunnelID: "tunnel-id", SidecarID: "container-id", Image: "cloudflare/cloudflared:2026.7.3", Routes: []ManagedTunnelRoute{{Hostname: "app.example.com", Service: "http://10.0.0.2:8080", NetworkIDs: []string{"network-id"}, RemoveAfter: &deadline}}}},
+	}
+	if err := store.Save(want); err != nil {
+		t.Fatalf("Save returned error: %v", err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
+	if strings.Contains(string(payload), "token") {
+		t.Fatalf("state payload must not contain tunnel token material: %s", payload)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if got.Version != SnapshotVersion || len(got.ManagedTunnels) != 1 || !got.ManagedRecords[0].Proxied || got.ManagedTunnels[0].Routes[0].RemoveAfter == nil {
+		t.Fatalf("unexpected tunnel state round trip: %+v", got)
 	}
 }
 

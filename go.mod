@@ -7,13 +7,13 @@ toolchain go1.26.3
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/cloudflare/cloudflare-go/v6 v6.10.0
+	github.com/containerd/errdefs v1.0.0
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
 )
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect

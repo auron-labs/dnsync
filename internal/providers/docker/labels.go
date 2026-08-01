@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"net"
 	"net/url"
 	"sort"
 	"strconv"
@@ -11,7 +12,7 @@ import (
 )
 
 func deriveDesiredRecords(provider contracts.ProviderRef, defaultTarget, baseDomain string, container containertypes.Summary) []contracts.DesiredRecord {
-	records, _ := deriveDesiredRecordsDetailed(provider, defaultTarget, baseDomain, container)
+	records, _, _ := deriveDesiredSnapshotDetailed(provider, defaultTarget, baseDomain, container)
 	return records
 }
 
@@ -23,24 +24,42 @@ type derivationDiagnostic struct {
 }
 
 func deriveDesiredRecordsDetailed(provider contracts.ProviderRef, defaultTarget, baseDomain string, container containertypes.Summary) ([]contracts.DesiredRecord, []derivationDiagnostic) {
+	records, _, diagnostics := deriveDesiredSnapshotDetailed(provider, defaultTarget, baseDomain, container)
+	return records, diagnostics
+}
+
+func deriveDesiredSnapshotDetailed(provider contracts.ProviderRef, defaultTarget, baseDomain string, container containertypes.Summary) ([]contracts.DesiredRecord, []contracts.DesiredTunnelRoute, []derivationDiagnostic) {
 	if isExcluded(container.Labels) {
-		return nil, []derivationDiagnostic{{
+		return nil, nil, []derivationDiagnostic{{
 			reason: "proxy.exclude",
 			hint:   "remove proxy.exclude=true to let this container publish DNS records",
 		}}
 	}
 
+	tunnelEnabled, tunnelInvalid := tunnelLabel(container.Labels)
 	outputType, include := dnsOutputType(container.Labels)
-	if !include {
-		return nil, []derivationDiagnostic{{
+	if !include && !tunnelEnabled {
+		diagnostics := []derivationDiagnostic{{
 			reason: "proxy.dns=false",
 			hint:   "set proxy.dns=true or remove proxy.dns to enable DNS derivation",
 		}}
+		if tunnelInvalid {
+			diagnostics = append(diagnostics, derivationDiagnostic{reason: "invalid proxy.cloudflare.tunnel", hint: "set proxy.cloudflare.tunnel=true to enable Cloudflare Tunnel routing"})
+		}
+		return nil, nil, diagnostics
+	}
+
+	diagnostics := make([]derivationDiagnostic, 0, 2)
+	if tunnelInvalid {
+		diagnostics = append(diagnostics, derivationDiagnostic{
+			reason: "invalid proxy.cloudflare.tunnel",
+			hint:   "set proxy.cloudflare.tunnel=true to enable Cloudflare Tunnel routing",
+		})
 	}
 
 	aliases := collectAliases(container)
 	if len(aliases) == 0 {
-		return nil, []derivationDiagnostic{{
+		return nil, nil, []derivationDiagnostic{{
 			reason: "no supported alias/port",
 			hint:   "set proxy.aliases with matching proxy.<alias>.port labels, or define proxy.*.port / proxy.#.port",
 		}}
@@ -55,7 +74,7 @@ func deriveDesiredRecordsDetailed(provider contracts.ProviderRef, defaultTarget,
 	}
 
 	records := make([]contracts.DesiredRecord, 0, len(aliases))
-	diagnostics := make([]derivationDiagnostic, 0)
+	routes := make([]contracts.DesiredTunnelRoute, 0, len(aliases))
 	for _, alias := range aliases {
 		aliasName := alias.name
 		hostname := qualifyHostname(aliasName, baseDomain)
@@ -68,33 +87,148 @@ func deriveDesiredRecordsDetailed(provider contracts.ProviderRef, defaultTarget,
 			continue
 		}
 
-		target := explicitHostOverride(container.Labels, aliasName, alias.position)
-		if target == "" {
-			target = answer
-		}
-		if target == "" {
-			diagnostics = append(diagnostics, derivationDiagnostic{
-				alias:    aliasName,
-				hostname: hostname,
-				reason:   "empty_answer_target",
-				hint:     "set sources[].host_ip or proxy.*.host / proxy.<alias>.host",
-			})
-			continue
+		if tunnelEnabled {
+			service, networkIDs, reason := tunnelService(container, alias)
+			if reason != "" {
+				diagnostics = append(diagnostics, derivationDiagnostic{alias: aliasName, hostname: hostname, reason: reason, hint: "set a numeric proxy port from 1 through 65535 and attach the container to a network with an IP endpoint"})
+			}
+			if service != "" {
+				routes = append(routes, contracts.DesiredTunnelRoute{
+					Hostname:   hostname,
+					Service:    service,
+					Source:     source,
+					NetworkIDs: networkIDs,
+					Output:     "cloudflare",
+				})
+			}
 		}
 
-		records = append(records, contracts.DesiredRecord{
-			Hostname: hostname,
-			Answer:   normalizeAnswerTarget(target),
-			Source:   source,
-			Output:   outputType,
-		})
+		if include {
+			target := explicitHostOverride(container.Labels, aliasName, alias.position)
+			if target == "" {
+				target = answer
+			}
+			if target == "" {
+				diagnostics = append(diagnostics, derivationDiagnostic{
+					alias:    aliasName,
+					hostname: hostname,
+					reason:   "empty_answer_target",
+					hint:     "set sources[].host_ip or proxy.*.host / proxy.<alias>.host",
+				})
+				continue
+			}
+
+			records = append(records, contracts.DesiredRecord{
+				Hostname: hostname,
+				Answer:   normalizeAnswerTarget(target),
+				Source:   source,
+				Output:   outputType,
+			})
+		}
 	}
 
 	sort.Slice(records, func(i, j int) bool {
 		return desiredRecordLess(records[i], records[j])
 	})
 
-	return records, diagnostics
+	sort.Slice(routes, func(i, j int) bool {
+		left := routes[i]
+		right := routes[j]
+		return left.Hostname+"|"+left.Service+"|"+left.Source.ID < right.Hostname+"|"+right.Service+"|"+right.Source.ID
+	})
+
+	return records, routes, diagnostics
+}
+
+func tunnelService(container containertypes.Summary, alias aliasRef) (string, []string, string) {
+	port := portForAlias(container.Labels, alias.name, alias.position)
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return "", nil, "invalid tunnel port"
+	}
+	if container.NetworkSettings == nil {
+		return "", nil, "missing container network endpoint"
+	}
+
+	type endpoint struct {
+		name      string
+		address   string
+		networkID string
+	}
+	endpoints := make([]endpoint, 0, len(container.NetworkSettings.Networks))
+	for name, settings := range container.NetworkSettings.Networks {
+		if settings == nil || !settings.IPAddress.IsValid() || strings.TrimSpace(settings.NetworkID) == "" {
+			continue
+		}
+		endpoints = append(endpoints, endpoint{name: name, address: settings.IPAddress.String(), networkID: strings.TrimSpace(settings.NetworkID)})
+	}
+	if len(endpoints) == 0 {
+		return "", nil, "missing container network endpoint"
+	}
+	sort.Slice(endpoints, func(i, j int) bool {
+		leftIPv4 := endpoints[i].address != "" && !strings.Contains(endpoints[i].address, ":")
+		rightIPv4 := endpoints[j].address != "" && !strings.Contains(endpoints[j].address, ":")
+		if leftIPv4 != rightIPv4 {
+			return leftIPv4
+		}
+		return endpoints[i].name < endpoints[j].name
+	})
+
+	service := "http://" + net.JoinHostPort(endpoints[0].address, strconv.Itoa(portNumber))
+	return service, []string{endpoints[0].networkID}, ""
+}
+
+func tunnelLabel(labels map[string]string) (enabled, invalid bool) {
+	value := strings.TrimSpace(labels["proxy.cloudflare.tunnel"])
+	if value == "" {
+		return false, false
+	}
+	if strings.EqualFold(value, "true") {
+		return true, false
+	}
+	return false, true
+}
+
+func portForAlias(labels map[string]string, alias string, index int) string {
+	if value := normalizePortValue(labels["proxy."+alias+".port"]); value != "" {
+		return value
+	}
+	if index > 0 {
+		if value := normalizePortValue(labels["proxy.#"+itoa(index)+".port"]); value != "" {
+			return value
+		}
+	}
+	return normalizePortValue(labels["proxy.*.port"])
+}
+
+func schemeForAlias(labels map[string]string, alias string, index int) string {
+	for _, key := range []string{"proxy." + alias + ".scheme", "proxy." + alias + ".protocol"} {
+		if value := normalizeTunnelScheme(labels[key]); value != "" {
+			return value
+		}
+	}
+	if index > 0 {
+		for _, suffix := range []string{".scheme", ".protocol"} {
+			if value := normalizeTunnelScheme(labels["proxy.#"+itoa(index)+suffix]); value != "" {
+				return value
+			}
+		}
+	}
+	for _, key := range []string{"proxy.*.scheme", "proxy.*.protocol"} {
+		if value := normalizeTunnelScheme(labels[key]); value != "" {
+			return value
+		}
+	}
+	return "http"
+}
+
+func normalizeTunnelScheme(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "http", "https", "tcp", "ssh", "rdp", "smb":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return ""
+	}
 }
 
 func qualifyHostname(hostname, baseDomain string) string {

@@ -32,6 +32,8 @@ What it covers by default:
 - managed rewrite update and restore
 - manual-record safety across daemon restart
 - restart recovery
+- persisted removal grace and cancellation when the workload returns
+- dual stdout/file logging, `0600` log permissions, and the configured rotation settings
 - stale-delete verification is currently skipped in the default AdGuard harness because its visible rewrite API does not expose proof-bearing provenance
 
 Cleanup defaults to `docker compose -f deploy/compose/live-test/compose.yaml down -v` on exit and removes the temporary runtime bind-mount directories. Keep the stack running only when you need to inspect it:
@@ -45,6 +47,10 @@ KEEP_RUNNING=1 mise run live-test
 In keep-running mode, the script preserves the temporary runtime directories that back the AdGuard and state bind mounts, then prints the exact `docker compose ... down -v` and `rm -rf ...` cleanup commands to run when you are done inspecting the stack.
 
 Optional external outputs should be added only when you want to exercise them explicitly, and any secret must stay as an environment reference such as `api_key_ref = "ENV:CLOUDFLARE_API_KEY"`.
+
+The fixture uses a short ten-second grace period and writes its second log sink
+to the temporary state mount. The script reads protected state/log files via
+Docker so the test can preserve the daemon's `0600` permissions.
 
 ## Credentials and log hygiene
 

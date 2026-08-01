@@ -1039,6 +1039,167 @@ func newTestProvider(baseURL string) *Provider {
 	return provider
 }
 
+func TestCloudflareConfigureTunnelSortsIngressAndAppendsCatchAll(t *testing.T) {
+	t.Parallel()
+	var ingress []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertBearerToken(t, r)
+		if r.Method != http.MethodPut || !strings.Contains(r.URL.Path, "/accounts/account-123/") || !strings.Contains(r.URL.Path, "configurations") {
+			t.Fatalf("unexpected tunnel configuration request: %s %s", r.Method, r.URL.Path)
+		}
+		var body struct {
+			Config struct {
+				Ingress []map[string]any `json:"ingress"`
+			} `json:"config"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		ingress = body.Config.Ingress
+		writeCloudflareJSON(t, w, map[string]any{"result": map[string]any{}, "success": true, "errors": []any{}, "messages": []any{}})
+	}))
+	defer server.Close()
+	provider := newTestProvider(server.URL)
+	err := provider.ConfigureTunnel(context.Background(), "account-123", "tunnel-123", []contracts.DesiredTunnelRoute{{Hostname: "z.example.test", Service: "http://z:8080"}, {Hostname: "a.example.test", Service: "http://a:8080"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ingress) != 3 || ingress[0]["hostname"] != "a.example.test" || ingress[1]["hostname"] != "z.example.test" || ingress[2]["service"] != "http_status:404" {
+		t.Fatalf("unexpected ingress payload: %#v", ingress)
+	}
+}
+
+func TestCloudflareCreateProxiedCNAMEAndTemporaryTunnelErrorAreSafe(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertBearerToken(t, r)
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/zones/zone-123/dns_records") {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["type"] != "CNAME" || body["content"] != "tunnel.cfargotunnel.com" || body["proxied"] != true {
+			t.Fatalf("unexpected proxied CNAME: %#v", body)
+		}
+		writeCloudflareJSON(t, w, map[string]any{"result": map[string]any{"id": "record-1", "type": "CNAME", "name": "app.unit.test", "content": "tunnel.cfargotunnel.com", "proxied": true}, "success": true, "errors": []any{}, "messages": []any{}})
+	}))
+	defer server.Close()
+	provider := newTestProvider(server.URL)
+	if _, err := provider.Create(context.Background(), contracts.DesiredRecord{Hostname: "app.unit.test", Answer: "tunnel.cfargotunnel.com", Proxied: true}); err != nil {
+		t.Fatal(err)
+	}
+	err := wrapCloudflareTemporary(fmt.Errorf("tunnel token failed: %w", cloudflareStatusError(t, http.StatusServiceUnavailable)))
+	if !isTemporary(err) || strings.Contains(err.Error(), "cf-secret-token") {
+		t.Fatalf("tunnel failure was not retryable/redacted: %v", err)
+	}
+}
+
+func TestCloudflareTunnelHTTPLifecycleEndpoints(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertBearerToken(t, r)
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/token"):
+			writeCloudflareJSON(t, w, map[string]any{"result": "connector-token", "success": true, "errors": []any{}, "messages": []any{}})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/cfd_tunnel"):
+			if r.URL.Query().Get("page") == "2" {
+				writeCloudflareJSON(t, w, map[string]any{"result": []any{}, "success": true, "errors": []any{}, "messages": []any{}, "result_info": map[string]any{"page": 2, "per_page": 100}})
+				return
+			}
+			writeCloudflareJSON(t, w, map[string]any{"result": []map[string]any{{"id": "tunnel-123", "name": "main", "config_src": "cloudflare"}}, "success": true, "errors": []any{}, "messages": []any{}, "result_info": map[string]any{"page": 1, "per_page": 100}})
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/cfd_tunnel/"):
+			writeCloudflareJSON(t, w, map[string]any{"result": map[string]any{}, "success": true, "errors": []any{}, "messages": []any{}})
+		default:
+			t.Fatalf("unexpected tunnel endpoint: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	provider := newTestProvider(server.URL)
+	tunnel, err := provider.EnsureTunnel(context.Background(), "account-123", "main", "tunnel-123")
+	if err != nil || tunnel.ID != "tunnel-123" {
+		t.Fatalf("ensure tunnel: %+v err=%v", tunnel, err)
+	}
+	token, err := provider.TunnelToken(context.Background(), "account-123", tunnel.ID)
+	if err != nil || token != "connector-token" {
+		t.Fatalf("tunnel token: %q err=%v", token, err)
+	}
+	if err := provider.DeleteTunnel(context.Background(), "account-123", tunnel.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 4 || !strings.Contains(calls[0], "/accounts/account-123/") || !strings.HasSuffix(calls[2], "/token") || !strings.HasPrefix(calls[3], "DELETE ") {
+		t.Fatalf("unexpected lifecycle calls: %v", calls)
+	}
+}
+
+func TestCloudflareEnsureTunnelCreatesWhenManagedRemoteDisappeared(t *testing.T) {
+	t.Parallel()
+	var created bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertBearerToken(t, r)
+		switch r.Method {
+		case http.MethodGet:
+			writeCloudflareJSON(t, w, map[string]any{
+				"result":      []any{},
+				"success":     true,
+				"errors":      []any{},
+				"messages":    []any{},
+				"result_info": map[string]any{"page": 1, "per_page": 100, "count": 0, "total_count": 0, "total_pages": 1},
+			})
+		case http.MethodPost:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["name"] != "main" || body["config_src"] != "cloudflare" {
+				t.Fatalf("unexpected tunnel create payload: %#v", body)
+			}
+			created = true
+			writeCloudflareJSON(t, w, map[string]any{
+				"result":   map[string]any{"id": "replacement-tunnel", "name": "main", "config_src": "cloudflare"},
+				"success":  true,
+				"errors":   []any{},
+				"messages": []any{},
+			})
+		default:
+			t.Fatalf("unexpected tunnel create request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(server.URL)
+	tunnel, err := provider.EnsureTunnel(context.Background(), "account-123", "main", "missing-managed-tunnel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || tunnel.ID != "replacement-tunnel" || tunnel.Name != "main" {
+		t.Fatalf("managed tunnel was not recreated: created=%v tunnel=%+v", created, tunnel)
+	}
+}
+
+func TestCloudflareDeleteTunnelTreatsNotFoundAsAlreadyRemoved(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertBearerToken(t, r)
+		w.WriteHeader(http.StatusNotFound)
+		writeCloudflareJSON(t, w, map[string]any{
+			"result":   nil,
+			"success":  false,
+			"errors":   []map[string]any{{"code": 1000, "message": "tunnel not found"}},
+			"messages": []any{},
+		})
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(server.URL)
+	if err := provider.DeleteTunnel(context.Background(), "account-123", "already-removed"); err != nil {
+		t.Fatalf("idempotent tunnel delete returned error: %v", err)
+	}
+}
+
 func cloudflareStatusError(t *testing.T, statusCode int) error {
 	t.Helper()
 	body, err := json.Marshal(map[string]any{

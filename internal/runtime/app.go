@@ -48,6 +48,9 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if deps.LogCloser != nil {
+		defer deps.LogCloser.Close()
+	}
 
 	store, err := state.NewStore(resolved.State.Path)
 	if err != nil {
@@ -152,21 +155,42 @@ func (a *App) reconcileOnce(ctx context.Context) error {
 	logDebug(ctx, a.deps.Logger, "loaded owned state snapshot", "records", len(owned.ManagedRecords))
 
 	desired := make([]contracts.DesiredRecord, 0)
+	tunnelRoutes := make([]contracts.DesiredTunnelRoute, 0)
 	for i, source := range a.sources {
-		records, err := source.ListDesired(ctx)
+		snapshot, err := source.ListDesired(ctx)
 		if err != nil {
 			return sourceListError{sourceIndex: i, provider: source.Provider(), err: err}
 		}
-		logDebug(ctx, a.deps.Logger, "listed desired records from source", "source", providerKey(source.Provider()), "records", len(records))
-		for _, record := range records {
+		logDebug(ctx, a.deps.Logger, "listed desired records from source", "source", providerKey(source.Provider()), "records", len(snapshot.Records), "tunnel_routes", len(snapshot.TunnelRoutes))
+		for _, record := range snapshot.Records {
 			logTrace(ctx, a.deps.Logger, "desired record discovered", "source", providerKey(source.Provider()), "source_id", record.Source.ID, "display_name", record.Source.DisplayName, "hostname", record.Hostname, "answer", record.Answer)
 		}
-		desired = append(desired, records...)
+		desired = append(desired, snapshot.Records...)
+		tunnelRoutes = append(tunnelRoutes, snapshot.TunnelRoutes...)
 	}
-	logDebug(ctx, a.deps.Logger, "collected desired records across sources", "records", len(desired))
+	now := time.Now().UTC()
+	owned, tunnel, err := a.prepareTunnel(ctx, owned, tunnelRoutes, now)
+	if err != nil {
+		return err
+	}
+	logDebug(ctx, a.deps.Logger, "collected desired records across sources", "records", len(desired), "tunnel_routes", len(tunnelRoutes))
+
+	tunnelHostnames := make(map[string]struct{})
+	if tunnel != nil && tunnel.managed != nil {
+		for _, route := range activeTunnelRoutes(tunnel.routes, now) {
+			tunnelHostnames[normalizeHostname(route.Hostname)] = struct{}{}
+			desired = append(desired, contracts.DesiredRecord{
+				Hostname: route.Hostname,
+				Answer:   tunnel.managed.TunnelID + ".cfargotunnel.com",
+				Source:   route.Source,
+				Output:   "cloudflare",
+				Proxied:  true,
+			})
+		}
+	}
 
 	for i, output := range a.outputs {
-		outputDesired := filterDesiredForOutput(desired, output.Provider())
+		outputDesired := filterDesiredForOutputWithTunnelPriority(desired, output.Provider(), tunnelHostnames, tunnel)
 		visible, err := output.ListVisible(ctx)
 		if err != nil {
 			return outputListError{outputIndex: i, provider: output.Provider(), err: err}
@@ -181,7 +205,11 @@ func (a *App) reconcileOnce(ctx context.Context) error {
 			Desired: outputDesired,
 			Visible: visible,
 			Owned:   owned,
-			Logger:  a.deps.Logger,
+			Now: func() time.Time {
+				return now
+			},
+			Grace:  a.deps.RemovalGrace,
+			Logger: a.deps.Logger,
 		})
 		if err != nil {
 			return fmt.Errorf("reconcile output %d (%s/%s): %w", i, output.Provider().Type, output.Provider().Name, err)
@@ -189,10 +217,15 @@ func (a *App) reconcileOnce(ctx context.Context) error {
 
 		owned = result.Next
 	}
-	return nil
+	_, err = a.finishTunnel(ctx, owned, tunnel, now)
+	return err
 }
 
 func filterDesiredForOutput(desired []contracts.DesiredRecord, output contracts.ProviderRef) []contracts.DesiredRecord {
+	return filterDesiredForOutputWithTunnelPriority(desired, output, nil, nil)
+}
+
+func filterDesiredForOutputWithTunnelPriority(desired []contracts.DesiredRecord, output contracts.ProviderRef, tunnelHostnames map[string]struct{}, tunnel *tunnelPhase) []contracts.DesiredRecord {
 	if len(desired) == 0 {
 		return nil
 	}
@@ -202,6 +235,16 @@ func filterDesiredForOutput(desired []contracts.DesiredRecord, output contracts.
 	for _, record := range desired {
 		if record.Output != "" && strings.TrimSpace(strings.ToLower(record.Output)) != outputType {
 			continue
+		}
+		if outputType == "cloudflare" {
+			_, tunnelHostname := tunnelHostnames[normalizeHostname(record.Hostname)]
+			isSelectedTunnelCNAME := tunnel != nil && tunnel.managed != nil && sameProvider(output, tunnel.binding.output.Provider()) && record.Proxied && strings.EqualFold(strings.TrimSpace(record.Answer), strings.TrimSpace(tunnel.managed.TunnelID+".cfargotunnel.com"))
+			if tunnelHostname && !isSelectedTunnelCNAME {
+				continue
+			}
+			if isSelectedTunnelCNAME && !sameProvider(output, tunnel.binding.output.Provider()) {
+				continue
+			}
 		}
 		filtered = append(filtered, record)
 	}
@@ -214,6 +257,7 @@ type sourceWatchEvent struct {
 	err         error
 	hint        bool
 	reconnect   bool
+	deadline    bool
 }
 
 type sourceListError struct {
@@ -258,11 +302,10 @@ func (a *App) runSteadyState(ctx context.Context) error {
 	}
 
 	if len(watchers) == 0 {
-		<-ctx.Done()
-		return ctx.Err()
+		return a.runRemovalDeadlineOnly(ctx)
 	}
 
-	events := make(chan sourceWatchEvent, len(watchers))
+	events := make(chan sourceWatchEvent, len(watchers)+1)
 	reconnectDelays := make(map[int]time.Duration, len(watchers))
 	reconnectPending := make(map[int]bool, len(watchers))
 	watchHintDebounce := a.deps.WatchHintDebounce
@@ -276,6 +319,27 @@ func (a *App) runSteadyState(ctx context.Context) error {
 	if err := a.reconcile(ctx, "watch_startup_handoff"); err != nil {
 		return err
 	}
+	var removalTimer *time.Timer
+	var removalTimerC <-chan time.Time
+	refreshRemovalTimer := func() {
+		stopTimer(removalTimer)
+		removalTimer = nil
+		removalTimerC = nil
+		deadline, err := a.nextRemovalDeadline()
+		if err != nil || deadline.IsZero() {
+			if err != nil {
+				a.deps.Logger.Warn("could not schedule removal grace deadline", "error", err)
+			}
+			return
+		}
+		delay := time.Until(deadline)
+		if delay < 0 {
+			delay = 0
+		}
+		removalTimer = time.NewTimer(delay)
+		removalTimerC = removalTimer.C
+	}
+	refreshRemovalTimer()
 	for i := range reconnectDelays {
 		reconnectDelays[i] = a.deps.Retry.InitialInterval
 	}
@@ -284,7 +348,15 @@ func (a *App) runSteadyState(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			stopTimer(watchHintTimer)
+			stopTimer(removalTimer)
 			return ctx.Err()
+		case <-removalTimerC:
+			removalTimer = nil
+			removalTimerC = nil
+			if err := a.reconcile(ctx, "removal_deadline"); err != nil {
+				return err
+			}
+			refreshRemovalTimer()
 		case <-watchHintTimerC:
 			watchHintTimer = nil
 			watchHintTimerC = nil
@@ -294,6 +366,7 @@ func (a *App) runSteadyState(ctx context.Context) error {
 			if err := a.reconcile(ctx, "watch_hint"); err != nil {
 				return err
 			}
+			refreshRemovalTimer()
 		case event := <-events:
 			if event.hint {
 				provider := a.sources[event.sourceIndex].Provider()
@@ -303,6 +376,7 @@ func (a *App) runSteadyState(ctx context.Context) error {
 					if err := a.reconcile(ctx, "watch_hint"); err != nil {
 						return err
 					}
+					refreshRemovalTimer()
 					continue
 				}
 
@@ -333,6 +407,7 @@ func (a *App) runSteadyState(ctx context.Context) error {
 				if err := a.reconcile(ctx, "watch_reconnect_repair"); err != nil {
 					return err
 				}
+				refreshRemovalTimer()
 				reconnectDelays[event.sourceIndex] = a.deps.Retry.InitialInterval
 				continue
 			}
@@ -485,7 +560,7 @@ func (s timeoutSource) Provider() contracts.ProviderRef {
 	return s.base.Provider()
 }
 
-func (s timeoutSource) ListDesired(ctx context.Context) ([]contracts.DesiredRecord, error) {
+func (s timeoutSource) ListDesired(ctx context.Context) (contracts.DesiredSnapshot, error) {
 	ctx, cancel := withOperationTimeout(ctx, s.timeout)
 	defer cancel()
 	return s.base.ListDesired(ctx)
@@ -523,6 +598,46 @@ func (o timeoutOutput) Delete(ctx context.Context, visible contracts.VisibleReco
 	return o.base.Delete(ctx, visible)
 }
 
+func (o timeoutOutput) EnsureTunnel(ctx context.Context, accountID, name, managedID string) (contracts.TunnelInfo, error) {
+	tunnel, ok := o.base.(contracts.TunnelOutput)
+	if !ok {
+		return contracts.TunnelInfo{}, fmt.Errorf("output %s does not support tunnel control", providerKey(o.Provider()))
+	}
+	ctx, cancel := withOperationTimeout(ctx, o.timeout)
+	defer cancel()
+	return tunnel.EnsureTunnel(ctx, accountID, name, managedID)
+}
+
+func (o timeoutOutput) TunnelToken(ctx context.Context, accountID, tunnelID string) (string, error) {
+	tunnel, ok := o.base.(contracts.TunnelOutput)
+	if !ok {
+		return "", fmt.Errorf("output %s does not support tunnel control", providerKey(o.Provider()))
+	}
+	ctx, cancel := withOperationTimeout(ctx, o.timeout)
+	defer cancel()
+	return tunnel.TunnelToken(ctx, accountID, tunnelID)
+}
+
+func (o timeoutOutput) ConfigureTunnel(ctx context.Context, accountID, tunnelID string, routes []contracts.DesiredTunnelRoute) error {
+	tunnel, ok := o.base.(contracts.TunnelOutput)
+	if !ok {
+		return fmt.Errorf("output %s does not support tunnel control", providerKey(o.Provider()))
+	}
+	ctx, cancel := withOperationTimeout(ctx, o.timeout)
+	defer cancel()
+	return tunnel.ConfigureTunnel(ctx, accountID, tunnelID, routes)
+}
+
+func (o timeoutOutput) DeleteTunnel(ctx context.Context, accountID, tunnelID string) error {
+	tunnel, ok := o.base.(contracts.TunnelOutput)
+	if !ok {
+		return fmt.Errorf("output %s does not support tunnel control", providerKey(o.Provider()))
+	}
+	ctx, cancel := withOperationTimeout(ctx, o.timeout)
+	defer cancel()
+	return tunnel.DeleteTunnel(ctx, accountID, tunnelID)
+}
+
 func (o loggingOutput) Provider() contracts.ProviderRef {
 	return o.base.Provider()
 }
@@ -553,6 +668,38 @@ func (o loggingOutput) Delete(ctx context.Context, visible contracts.VisibleReco
 		o.logger.Info("output mutation applied", "operation", "delete", "provider", providerKey(o.Provider()), "hostname", visible.Hostname)
 	}
 	return err
+}
+
+func (o loggingOutput) EnsureTunnel(ctx context.Context, accountID, name, managedID string) (contracts.TunnelInfo, error) {
+	tunnel, ok := o.base.(contracts.TunnelOutput)
+	if !ok {
+		return contracts.TunnelInfo{}, fmt.Errorf("output %s does not support tunnel control", providerKey(o.Provider()))
+	}
+	return tunnel.EnsureTunnel(ctx, accountID, name, managedID)
+}
+
+func (o loggingOutput) TunnelToken(ctx context.Context, accountID, tunnelID string) (string, error) {
+	tunnel, ok := o.base.(contracts.TunnelOutput)
+	if !ok {
+		return "", fmt.Errorf("output %s does not support tunnel control", providerKey(o.Provider()))
+	}
+	return tunnel.TunnelToken(ctx, accountID, tunnelID)
+}
+
+func (o loggingOutput) ConfigureTunnel(ctx context.Context, accountID, tunnelID string, routes []contracts.DesiredTunnelRoute) error {
+	tunnel, ok := o.base.(contracts.TunnelOutput)
+	if !ok {
+		return fmt.Errorf("output %s does not support tunnel control", providerKey(o.Provider()))
+	}
+	return tunnel.ConfigureTunnel(ctx, accountID, tunnelID, routes)
+}
+
+func (o loggingOutput) DeleteTunnel(ctx context.Context, accountID, tunnelID string) error {
+	tunnel, ok := o.base.(contracts.TunnelOutput)
+	if !ok {
+		return fmt.Errorf("output %s does not support tunnel control", providerKey(o.Provider()))
+	}
+	return tunnel.DeleteTunnel(ctx, accountID, tunnelID)
 }
 
 func providerKey(provider contracts.ProviderRef) string {
