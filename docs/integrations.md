@@ -13,6 +13,7 @@ The Docker provider uses the Moby client with API version negotiation. It reads 
 - `proxy.<alias>.host`, `proxy.#<n>.host`, and `proxy.*.host` override the answer target.
 - `proxy.exclude=true` opts a container out.
 - If `base_domain` is configured on the source, bare aliases are expanded to FQDNs before reconciliation.
+- `exclude_compose_projects` ignores every container whose standard Compose project label matches a configured project name. Matching is case-insensitive and surrounding whitespace in configuration is ignored.
 
 When labels stop producing a record, docker-dns-sync only deletes the visible DNS record if the output can prove exactly one same-key record is daemon-owned with non-empty provenance. Same-key matches without provenance, ambiguous duplicates, and unmanaged/manual records are preserved so the daemon does not delete operator-owned DNS. Providers that cannot expose that proof during listing leave the visible record in place even if local ownership existed earlier.
 

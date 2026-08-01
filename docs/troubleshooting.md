@@ -1,164 +1,145 @@
 # Troubleshooting
 
-## `-config` is missing
+Every symptom on this page maps to a real error path in the codebase. The
+exact wording depends on the inputs; match the leading token to the relevant
+cause, not to a literal character-for-character line.
 
-**Symptom**
+## The daemon exits before reaching steady state
 
-```text
-error: -config is required
-```
+### It complains that `-config` is required
 
-**Cause**
+**Cause:** The binary was started without the only flag it accepts, or with an
+empty path.
 
-The CLI has one required flag and does not use built-in defaults.
+**Fix:** Pass `-config /path/to/config.toml` on the command line.
 
-**Fix**
+### It mentions `stat config file`
 
-Run the daemon with `-config /path/to/config.toml`.
+**Cause:** The path you passed does not exist or is unreadable by the daemon's
+user. The startup loader calls `os.Stat` on the path and wraps any error with
+this prefix.
 
-## Config file is missing, unreadable, or malformed
+**Fix:** Confirm the file exists and is readable. The repository ships
+`testdata/config/example.toml`, `testdata/config/docker-container.toml`, and
+`testdata/config/socket-proxy.toml` as known-good starting points.
 
-**Symptoms**
+### It mentions `decode config file`
 
-- `stat config file: ...`
-- `decode config file: ...`
+**Cause:** TOML parsing failed, or the loader found an unknown key. The loader
+rejects misspelled fields, unexpected sections, and stale options instead of
+silently ignoring them.
 
-**Cause**
+**Fix:** Read the error closely:
 
-The path does not exist, cannot be read, or the TOML is invalid. The repository includes `testdata/config/malformed.toml` as a parse-failure example.
+- For syntax errors, fix the TOML and try again. `testdata/config/malformed.toml`
+  is a working parse-failure example to compare against.
+- For unknown keys, rename or remove the listed field. See
+  [Configuration](configuration.md) for the supported key list.
 
-**Fix**
+### It mentions `unix://` or `tcp://`
 
-- Confirm the path exists and is readable by the process.
-- Start from `testdata/config/example.toml`, `config.example.toml`, or another known-good sample.
-- Validate the TOML syntax before restart.
+**Cause:** The `sources[].endpoint` field is missing or uses a scheme other
+than the two supported transports.
 
-## Unknown config key fails startup
+**Fix:** Use a `unix://` socket path or a `tcp://` host:port endpoint.
 
-**Symptom**
+### It mentions `exactly one of` or `references an unset environment variable`
 
-- `decode config file: ...`
-- `unknown field ...`
-- `undecoded keys: ...`
+**Cause:** The AdGuard or Cloudflare output is missing one of the credential
+fields, set both an inline value and an `*_ref`, or set a `*_ref` whose
+environment variable is unset or empty.
 
-**Cause**
+**Fix:**
 
-Config loading is strict. The daemon rejects misspelled keys, unexpected sections, and stale options instead of silently ignoring them.
+- Pick exactly one of `password`/`password_ref` (AdGuard) and one of
+  `api_key`/`api_key_ref` (Cloudflare).
+- Export the referenced environment variable before starting the daemon.
+- Restart after fixing; secret resolution happens once at startup.
 
-**Fix**
+### The state file looks stale or corrupted
 
-- Remove the typo or unexpected key from the TOML file.
-- Rename the field to the documented key in [Configuration](configuration.md).
-- Restart only after the config contains documented keys only.
+**Cause:** The state file has a `version` newer than the running daemon, or
+the JSON is malformed. The loader wraps JSON decode failures with a
+`decode state file` prefix and rejects unknown versions with an
+`unsupported state snapshot version` prefix.
 
-## Invalid Docker endpoint scheme
+**Fix:**
 
-**Symptom**
+- If you just upgraded and the file is newer than the daemon supports, stop
+  upgrading and roll back to a build that can read it.
+- If the file is corrupted or hand-edited, point `state.path` at a fresh
+  writable file. Deleting the old file is safe; the store creates a new empty
+  snapshot on startup when the path is missing.
 
-```text
-sources[0].endpoint must use unix:// or tcp://
-```
+## Reconciliation is happening but produces nothing useful
 
-**Cause**
+### It logs a visible-record ambiguity error
 
-The source endpoint must match the validated Docker transport schemes.
+**Cause:** An output already has more than one visible record for the same
+hostname/answer pair. The reconciler refuses to guess which one belongs to
+the daemon and skips it.
 
-**Fix**
+**Fix:** Remove the duplicate from the output (AdGuard rewrite list or
+Cloudflare DNS list), then trigger another reconcile by restarting the
+daemon or waiting for the next Docker event.
 
-Use a `unix://...` socket or a `tcp://...` endpoint.
+### Stale DNS records are not getting deleted
 
-## Credential ref problems
+**Cause (almost always):** The output provider cannot surface proof that a
+visible same-key record belongs to the daemon. AdGuard's default rewrite
+listing exposes only the hostname and answer, with no stable unique
+identifier, so the daemon leaves same-key records in place rather than risk
+deleting an operator-owned one. Cloudflare's API does expose record IDs, so
+the same safety rule produces a destructive cleanup there.
 
-**Symptoms**
+**Fix:**
 
-- `outputs[0] must set exactly one of password or password_ref`
-- `outputs[0] must set exactly one of api_key or api_key_ref`
-- `outputs[0].password_ref references an unset environment variable`
-- `outputs[0].api_key_ref references an unset environment variable`
+- Confirm the record is actually stale (label removed, container gone).
+- If you accept the risk, remove the record manually from the output. The
+  next reconcile will not recreate it.
+- See [Architecture → Reconciliation model](architecture.md#reconciliation-model)
+  for the precise rule.
 
-**Cause**
+### The Docker event stream dropped
 
-The config requires one credential source only, and `ENV:` references must resolve to a non-empty environment variable.
+**Cause:** The Docker daemon, socket, or proxy became unavailable. The source
+goroutine reports a `docker event stream ended` error on its error channel
+and the runtime reconnects with bounded backoff.
 
-**Fix**
+**Fix:**
 
-- Keep only one of the inline secret field or the `*_ref` field.
-- Export the referenced environment variable before startup.
+- Check the Docker daemon and socket permissions.
+- For `tcp://` endpoints, confirm the proxy or remote daemon is still
+  reachable.
+- A full reconcile still happens on every reconnect, so manual recovery is
+  usually unnecessary.
 
-## Unsupported or stale state file
+## AdGuard and Cloudflare lookups fail
 
-**Symptom**
+### `adguard request` errors
 
-```text
-unsupported state snapshot version <n>
-```
+**Cause:** The AdGuard API returned a non-2xx status, the connection failed,
+or the request body could not be encoded. Temporary statuses (`408`, `429`,
+`5xx`) are retried with bounded backoff; everything else surfaces.
 
-or a state load/decode error.
+**Fix:**
 
-**Cause**
+- Verify the URL, username, and password in your config.
+- Confirm AdGuard Home is reachable from where the daemon runs.
+- If you need a direct API check, run
+  `curl -u user:pass <url>/control/rewrite/list` against the same URL the
+  daemon uses.
 
-The snapshot format is versioned and the file may be stale, corrupted, or hand-edited.
+### Cloudflare mutations report duplicate or unknown errors
 
-**Fix**
+**Cause:** Record creation may collide with a pre-existing record. The
+provider recovers from the `81058` duplicate-create error by re-reading
+visible records and trying again; other codes surface.
 
-- Point `state.path` at a fresh writable file.
-- If the old file matters, back it up before replacing it.
-- Deleting the file is safe; the store recreates an empty snapshot on startup when the path is missing.
+**Fix:** Inspect the relevant zone in the Cloudflare dashboard to confirm
+the conflict is gone, then restart the daemon.
 
-## Ambiguous visible record collisions
-
-**Symptom**
-
-```text
-visible record ambiguity for output <name> key <hostname>|<answer>: <n> matches
-```
-
-**Cause**
-
-The output already contains more than one visible record for the same hostname/answer pair.
-
-**Fix**
-
-- Remove the duplicate records from the output system.
-- Re-run the daemon after the visible set is clean.
-
-## Docker event stream closes
-
-**Symptom**
-
-```text
-docker event stream ended
-```
-
-or a reconnect warning in the logs.
-
-**Cause**
-
-The Docker event stream dropped or the daemon/socket/proxy became unavailable.
-
-**Fix**
-
-- Check Docker daemon health and socket permissions.
-- Check TCP proxy connectivity if you use `tcp://...`.
-- Re-run the daemon; it retries watch reconnects and full reconciliation.
-
-## AdGuard request failures
-
-**Symptom**
-
-`adguard request ... failed with status ...`
-
-**Cause**
-
-The AdGuard API returned a non-2xx status or the request could not connect.
-
-**Fix**
-
-- Verify the URL and credentials.
-- Check AdGuard availability.
-- Inspect `curl -u user:pass <url>/control/rewrite/list` if you need a direct API check.
-
-## Useful diagnostics
+## Quick diagnostic commands
 
 ```bash
 mise exec -- go test ./...
@@ -166,4 +147,5 @@ docker compose -f deploy/compose/live-test/compose.yaml logs -f docker-dns-sync
 curl -u admin:adguard-test-password http://127.0.0.1:13000/control/rewrite/list
 ```
 
-See also: [Configuration](configuration.md) and [Deployment](deployment.md).
+The AdGuard URL above matches the live test stack only; use your own URL
+and credentials in production.

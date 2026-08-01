@@ -45,6 +45,12 @@ func Validate(cfg Config) error {
 		if baseDomain := normalizeDomainName(source.BaseDomain); strings.TrimSpace(source.BaseDomain) != "" && !isValidDomainName(baseDomain) {
 			return fmt.Errorf("sources[%d].base_domain must be a valid domain name", i)
 		}
+
+		for j, project := range source.ExcludeComposeProjects {
+			if strings.TrimSpace(project) == "" {
+				return fmt.Errorf("sources[%d].exclude_compose_projects[%d] must not be empty", i, j)
+			}
+		}
 	}
 
 	enabledTunnels := 0

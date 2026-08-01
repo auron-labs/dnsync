@@ -145,6 +145,13 @@ func TestValidateRuntimeAndCredentialFields(t *testing.T) {
 			wantErr: "sources[0].base_domain must be a valid domain name",
 		},
 		{
+			name: "empty excluded compose project",
+			mutate: func(cfg *Config) {
+				cfg.Sources[0].ExcludeComposeProjects = []string{"production", " "}
+			},
+			wantErr: "sources[0].exclude_compose_projects[1] must not be empty",
+		},
+		{
 			name: "enabled cloudflare output requires zone id",
 			mutate: func(cfg *Config) {
 				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "cloudflare", Name: "primary-cloudflare", APIKey: "secret-token"})
@@ -347,9 +354,10 @@ func TestValidateCloudflareTunnelConfiguration(t *testing.T) {
 func validConfig() Config {
 	return Config{
 		Sources: []SourceConfig{{
-			Type:     "docker",
-			Name:     "local-docker",
-			Endpoint: "unix:///var/run/docker.sock",
+			Type:                   "docker",
+			Name:                   "local-docker",
+			Endpoint:               "unix:///var/run/docker.sock",
+			ExcludeComposeProjects: []string{"docker-dns-sync-live-test"},
 		}},
 		Outputs: []OutputConfig{{
 			Type:     "adguard",

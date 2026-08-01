@@ -152,7 +152,7 @@ func TestCloudflareListVisibleKeepsFQDN(t *testing.T) {
 		}
 
 		writeCloudflareJSON(t, w, map[string]any{
-			"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.jcaks.net", "content": "127.0.0.1"}},
+			"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.example.com", "content": "127.0.0.1"}},
 			"success":     true,
 			"errors":      []any{},
 			"messages":    []any{},
@@ -162,7 +162,7 @@ func TestCloudflareListVisibleKeepsFQDN(t *testing.T) {
 	defer server.Close()
 
 	provider := newTestProvider(server.URL)
-	provider.zoneName = "jcaks.net"
+	provider.zoneName = "example.com"
 	visible, err := provider.ListVisible(context.Background())
 	if err != nil {
 		t.Fatalf("ListVisible returned error: %v", err)
@@ -170,7 +170,7 @@ func TestCloudflareListVisibleKeepsFQDN(t *testing.T) {
 	if len(visible) != 1 {
 		t.Fatalf("expected 1 visible record, got %d", len(visible))
 	}
-	if visible[0].Hostname != "whoami.test.jcaks.net" {
+	if visible[0].Hostname != "whoami.test.example.com" {
 		t.Fatalf("expected fqdn hostname, got %+v", visible[0])
 	}
 	if visible[0].Provenance == nil || visible[0].Provenance.RemoteID != "rec-a" {
@@ -257,7 +257,7 @@ func TestCloudflareCreateRecoversDuplicateRecord(t *testing.T) {
 				return
 			}
 			writeCloudflareJSON(t, w, map[string]any{
-				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.jcaks.net", "content": "127.0.0.1"}},
+				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.example.com", "content": "127.0.0.1"}},
 				"success":     true,
 				"errors":      []any{},
 				"messages":    []any{},
@@ -270,8 +270,8 @@ func TestCloudflareCreateRecoversDuplicateRecord(t *testing.T) {
 	defer server.Close()
 
 	provider := newTestProvider(server.URL)
-	provider.zoneName = "jcaks.net"
-	provenance, err := provider.Create(context.Background(), contracts.DesiredRecord{Hostname: "whoami.test.jcaks.net", Answer: "127.0.0.1"})
+	provider.zoneName = "example.com"
+	provenance, err := provider.Create(context.Background(), contracts.DesiredRecord{Hostname: "whoami.test.example.com", Answer: "127.0.0.1"})
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestCloudflareCreateRecoversDuplicateRecord(t *testing.T) {
 	if got := listCalls.Load(); got != 2 {
 		t.Fatalf("expected two recovery list calls across pagination, got %d", got)
 	}
-	if meta, ok := provider.lookupVisibleRecord("whoami.test.jcaks.net", "127.0.0.1"); !ok || meta.id != "rec-a" {
+	if meta, ok := provider.lookupVisibleRecord("whoami.test.example.com", "127.0.0.1"); !ok || meta.id != "rec-a" {
 		t.Fatalf("expected cached record metadata after recovery, got %+v ok=%v", meta, ok)
 	}
 }
@@ -386,7 +386,7 @@ func TestCloudflareCreateRecoversValidationErrorChainDuplicateRecord(t *testing.
 				return
 			}
 			writeCloudflareJSON(t, w, map[string]any{
-				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.jcaks.net", "content": "127.0.0.1"}},
+				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.example.com", "content": "127.0.0.1"}},
 				"success":     true,
 				"errors":      []any{},
 				"messages":    []any{},
@@ -399,8 +399,8 @@ func TestCloudflareCreateRecoversValidationErrorChainDuplicateRecord(t *testing.
 	defer server.Close()
 
 	provider := newTestProvider(server.URL)
-	provider.zoneName = "jcaks.net"
-	provenance, err := provider.Create(context.Background(), contracts.DesiredRecord{Hostname: "whoami.test.jcaks.net", Answer: "127.0.0.1"})
+	provider.zoneName = "example.com"
+	provenance, err := provider.Create(context.Background(), contracts.DesiredRecord{Hostname: "whoami.test.example.com", Answer: "127.0.0.1"})
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
@@ -593,7 +593,7 @@ func TestCloudflareCreateDuplicateWithoutVisibleMatchFails(t *testing.T) {
 	defer server.Close()
 
 	provider := newTestProvider(server.URL)
-	provider.zoneName = "jcaks.net"
+	provider.zoneName = "example.com"
 	_, err := provider.Create(context.Background(), contracts.DesiredRecord{Hostname: "app.example.com", Answer: "10.0.0.10"})
 	if err == nil {
 		t.Fatal("expected error")

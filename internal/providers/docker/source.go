@@ -23,13 +23,14 @@ type apiClient interface {
 }
 
 type Provider struct {
-	ref         contracts.ProviderRef
-	endpoint    string
-	defaultHost string
-	baseDomain  string
-	client      apiClient
-	sidecars    tunnelSidecarClient
-	logger      *slog.Logger
+	ref                     contracts.ProviderRef
+	endpoint                string
+	defaultHost             string
+	baseDomain              string
+	excludedComposeProjects map[string]struct{}
+	client                  apiClient
+	sidecars                tunnelSidecarClient
+	logger                  *slog.Logger
 }
 
 func New(cfg config.SourceConfig, logger *slog.Logger) (*Provider, error) {
@@ -46,12 +47,13 @@ func New(cfg config.SourceConfig, logger *slog.Logger) (*Provider, error) {
 			Type: cfg.Type,
 			Name: cfg.Name,
 		},
-		endpoint:    cfg.Endpoint,
-		defaultHost: defaultAnswerTarget(cfg),
-		baseDomain:  normalizeName(cfg.BaseDomain),
-		client:      cli,
-		sidecars:    mobyTunnelSidecarClient{client: cli},
-		logger:      logger,
+		endpoint:                cfg.Endpoint,
+		defaultHost:             defaultAnswerTarget(cfg),
+		baseDomain:              normalizeName(cfg.BaseDomain),
+		excludedComposeProjects: composeProjectSet(cfg.ExcludeComposeProjects),
+		client:                  cli,
+		sidecars:                mobyTunnelSidecarClient{client: cli},
+		logger:                  logger,
 	}, nil
 }
 
@@ -95,6 +97,15 @@ func (p *Provider) ListDesired(ctx context.Context) (contracts.DesiredSnapshot, 
 			)
 			continue
 		}
+		if p.isExcludedComposeProject(container) {
+			logDockerTrace(ctx, p.logger, "skipped container from excluded Docker Compose project",
+				"provider", providerKey(p.ref),
+				"container_id", strings.TrimSpace(container.ID),
+				"display_name", containerDisplayName(container),
+				"compose_project", strings.TrimSpace(container.Labels[composeProjectLabel]),
+			)
+			continue
+		}
 
 		records, routes, diagnostics := deriveDesiredSnapshotDetailed(p.ref, p.defaultHost, p.baseDomain, container)
 		for _, diagnostic := range diagnostics {
@@ -130,6 +141,33 @@ func (p *Provider) ListDesired(ctx context.Context) (contracts.DesiredSnapshot, 
 	}
 
 	return desired.Sorted(), nil
+}
+
+const composeProjectLabel = "com.docker.compose.project"
+
+func composeProjectSet(projects []string) map[string]struct{} {
+	if len(projects) == 0 {
+		return nil
+	}
+
+	result := make(map[string]struct{}, len(projects))
+	for _, project := range projects {
+		project = normalizeName(project)
+		if project != "" {
+			result[project] = struct{}{}
+		}
+	}
+	return result
+}
+
+func (p *Provider) isExcludedComposeProject(container containertypes.Summary) bool {
+	project := normalizeName(container.Labels[composeProjectLabel])
+	if project == "" {
+		return false
+	}
+
+	_, excluded := p.excludedComposeProjects[project]
+	return excluded
 }
 
 const dockerTraceLevel slog.Level = slog.LevelDebug - 4

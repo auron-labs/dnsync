@@ -34,11 +34,13 @@ Startup is strict about unknown TOML keys. Misspelled fields, extra sections, an
 | `endpoint` | yes | Must start with `unix://` or `tcp://`. |
 | `host_ip` | no | Default answer target when labels do not override it. Must be a valid IP address if set. |
 | `base_domain` | no | Appended to label-derived hostnames so `foo` becomes `foo.example.com`. Existing FQDN labels are left unchanged. |
+| `exclude_compose_projects` | no | Compose project names whose containers are ignored, matched against the standard `com.docker.compose.project` label. |
 
 ### Docker source behavior
 
 - `host_ip` is the preferred default answer target.
 - `base_domain` makes derived hostnames canonical FQDNs before they reach any output.
+- `exclude_compose_projects = ["docker-dns-sync-live-test"]` prevents a production source on the same Docker daemon from discovering the repository's live-test workload.
 - If `host_ip` is empty and the endpoint is remote, the endpoint host is used as the default answer target.
 - If the endpoint is a local socket (`unix://`), no default answer target is inferred.
 - The source watches Docker container and network events and uses them as reconciliation hints.

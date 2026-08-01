@@ -22,12 +22,13 @@ func TestListDesired(t *testing.T) {
 
 	providerRef := contracts.ProviderRef{Type: "docker", Name: "local"}
 	tests := []struct {
-		name        string
-		endpoint    string
-		defaultHost string
-		baseDomain  string
-		containers  []containertypes.Summary
-		want        []contracts.DesiredRecord
+		name                    string
+		endpoint                string
+		defaultHost             string
+		baseDomain              string
+		excludedComposeProjects []string
+		containers              []containertypes.Summary
+		want                    []contracts.DesiredRecord
 	}{
 		{
 			name:       "returns desired records for eligible running containers only",
@@ -44,6 +45,27 @@ func TestListDesired(t *testing.T) {
 				{Hostname: "api.bar.bz", Answer: "edge.example", Source: contracts.SourceObjectRef{Provider: providerRef, ID: "ctr-a", DisplayName: "api"}},
 				{Hostname: "app.bar.bz", Answer: "edge.example", Source: contracts.SourceObjectRef{Provider: providerRef, ID: "ctr-b", DisplayName: "frontend"}},
 				{Hostname: "www.bar.bz", Answer: "www.internal", Source: contracts.SourceObjectRef{Provider: providerRef, ID: "ctr-b", DisplayName: "frontend"}},
+			},
+		},
+		{
+			name:                    "excludes configured Docker Compose projects",
+			endpoint:                "unix:///var/run/docker.sock",
+			defaultHost:             "192.168.1.50",
+			excludedComposeProjects: []string{" Docker-DNS-Sync-Live-Test "},
+			containers: []containertypes.Summary{
+				containerSummary("ctr-test", "/whoami", map[string]string{
+					"com.docker.compose.project": "docker-dns-sync-live-test",
+					"proxy.aliases":              "whoami.test",
+					"proxy.whoami.test.port":     "80",
+				}, "running", "172.18.0.20"),
+				containerSummary("ctr-prod", "/api", map[string]string{
+					"com.docker.compose.project": "production",
+					"proxy.aliases":              "api",
+					"proxy.api.port":             "8080",
+				}, "running", "172.18.0.21"),
+			},
+			want: []contracts.DesiredRecord{
+				{Hostname: "api", Answer: "192.168.1.50", Source: contracts.SourceObjectRef{Provider: providerRef, ID: "ctr-prod", DisplayName: "api"}},
 			},
 		},
 		{
@@ -86,10 +108,11 @@ func TestListDesired(t *testing.T) {
 			t.Parallel()
 
 			provider := &Provider{
-				ref:         providerRef,
-				endpoint:    tt.endpoint,
-				defaultHost: tt.defaultHost,
-				baseDomain:  tt.baseDomain,
+				ref:                     providerRef,
+				endpoint:                tt.endpoint,
+				defaultHost:             tt.defaultHost,
+				baseDomain:              tt.baseDomain,
+				excludedComposeProjects: composeProjectSet(tt.excludedComposeProjects),
 				client: &fakeDockerClient{
 					host:       tt.endpoint,
 					containers: tt.containers,

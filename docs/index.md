@@ -1,32 +1,47 @@
 # docker-dns-sync documentation
 
-`docker-dns-sync` is a Go daemon that watches Docker workloads, derives DNS records from Godoxy-style labels, and reconciles daemon-owned records into configured outputs. The primary documented operator path is AdGuard Home rewrites; the codebase also supports Cloudflare DNS as an output.
+`docker-dns-sync` is a small Go daemon that watches your Docker containers,
+turns a Godoxy-style label scheme into DNS records, and keeps those records in
+sync with one or more DNS providers. Out of the box it talks to AdGuard Home
+rewrites; Cloudflare DNS and an opt-in Cloudflare Tunnel sidecar are also
+supported.
 
-## What this docs set covers
+You give it a TOML config and a Docker endpoint. It does the rest.
 
-- [Getting started](getting-started.md)
-- [Configuration](configuration.md)
-- [Architecture](architecture.md)
-- [CLI](cli.md)
-- [Development](development.md)
-- [Testing](testing.md)
-- [Deployment](deployment.md)
-- [Integrations](integrations.md)
-- [Data model](data-model.md)
-- [Security](security.md)
-- [Troubleshooting](troubleshooting.md)
+## If you are new here
 
-## Recommended reading order
+Start with **[Getting started](getting-started.md)**. It walks you through
+picking a deployment style, writing a working config, and confirming that the
+daemon is actually syncing records.
 
-1. Start with [Getting started](getting-started.md).
-2. Read [Configuration](configuration.md) before editing any TOML.
-3. Review [Architecture](architecture.md) if you need to understand reconciliation or recovery.
-4. Use [Testing](testing.md) and [Development](development.md) for local workflow.
-5. Use [Deployment](deployment.md) and [Integrations](integrations.md) for operator setup.
-6. Keep [Troubleshooting](troubleshooting.md) handy for startup and runtime failures.
+That page is enough for most operators. Read further only when you need to.
 
-## Known limitations
+## If you just want to know what's possible
 
-- The binary has no built-in config defaults; `-config` is required.
-- Only source/output types registered in code are supported: `docker` sources, plus `adguard` and `cloudflare` outputs.
-- Local-socket Docker sources do not infer a default answer target unless `host_ip` or explicit `proxy.*.host` labels are provided.
+Scan the headings below. Each link points at the single page that owns that
+topic.
+
+| You want to… | Go to |
+| --- | --- |
+| Install and run the daemon for the first time | [Getting started](getting-started.md) |
+| Look up a config key, label, or default | [Configuration](configuration.md) |
+| Understand how reconcile decides create/update/delete | [Architecture](architecture.md) |
+| See what each provider actually calls | [Integrations](integrations.md) |
+| Ship a systemd unit or a container image | [Deployment](deployment.md) |
+| Run the unit tests or the live smoke test | [Testing](testing.md) |
+| Tweak the codebase or build a release | [Development](development.md) |
+| Inspect the persisted ownership snapshot | [Data model](data-model.md) |
+| Recover from a startup or runtime failure | [Troubleshooting](troubleshooting.md) |
+| Handle secrets, the Docker socket, or runtime hardening | [Security](security.md) |
+
+## Things the daemon will not do
+
+These are deliberate limits in the current codebase, not gaps in the docs:
+
+- It will not start without a `-config` path. There are no built-in defaults.
+- It will not invent an answer target for a local Unix Docker socket. Set
+  `sources[].host_ip` or label each container with `proxy.<alias>.host`.
+- It will not delete a DNS record on a label change unless the output provider
+  can prove at reconcile time that the visible record belongs to the daemon.
+  This is why AdGuard's default rewrite listing leaves same-key records alone
+  even after a workload is removed.
