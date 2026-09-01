@@ -376,18 +376,18 @@ func TestReconcilePlanApply(t *testing.T) {
 	t.Run("plan stale owned delete with unique provenance proof", func(t *testing.T) {
 		t.Parallel()
 
-		owned := state.Snapshot{ManagedRecords: []state.ManagedRecord{{
+		owned := state.Snapshot{InstallationID: "123e4567-e89b-42d3-a456-426614174000", ManagedRecords: []state.ManagedRecord{{
 			Output:     provider,
 			Source:     source,
 			Hostname:   "stale.local",
 			Answer:     "10.0.0.12",
-			Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale"},
+			Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale", InstallationID: "123e4567-e89b-42d3-a456-426614174000"},
 		}}}
 
 		plan := buildReconcilePlan(
 			provider,
 			nil,
-			[]contracts.VisibleRecord{{Output: provider, Hostname: "STALE.local", Answer: "10.0.0.12", Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale"}}},
+			[]contracts.VisibleRecord{{Output: provider, Hostname: "STALE.local", Answer: "10.0.0.12", Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale", InstallationID: "123e4567-e89b-42d3-a456-426614174000"}}},
 			owned,
 		)
 
@@ -399,7 +399,7 @@ func TestReconcilePlanApply(t *testing.T) {
 		}
 	})
 
-	t.Run("retain stale owned records without deleting remote dns when proof is unavailable", func(t *testing.T) {
+	t.Run("retain stale AdGuard record with unique exact visible match without provenance", func(t *testing.T) {
 		t.Parallel()
 
 		fakeOutput := &reconcileFakeOutput{provider: provider}
@@ -413,7 +413,7 @@ func TestReconcilePlanApply(t *testing.T) {
 		result, err := ReconcileOutput(context.Background(), ReconcileInput{
 			Output:  fakeOutput,
 			Desired: nil,
-			Visible: []contracts.VisibleRecord{{Output: provider, Hostname: "old.local", Answer: "10.0.0.12"}},
+			Visible: []contracts.VisibleRecord{{Output: provider, Hostname: "OLD.local.", Answer: "10.0.0.12"}},
 			Owned:   owned,
 		})
 		if err != nil {
@@ -421,13 +421,13 @@ func TestReconcilePlanApply(t *testing.T) {
 		}
 
 		if got := len(fakeOutput.deleted); got != 0 {
-			t.Fatalf("expected no delete calls, got %d", got)
+			t.Fatalf("expected no delete calls without provenance, got %d", got)
 		}
 		if got := len(result.Next.ManagedRecords); got != 1 {
 			t.Fatalf("expected stale owned state to be retained, got %d managed records", got)
 		}
-		if result.Next.ManagedRecords[0].Hostname != "old.local" || result.Next.ManagedRecords[0].Answer != "10.0.0.12" {
-			t.Fatalf("expected retained stale owned record to stay unchanged, got %+v", result.Next.ManagedRecords[0])
+		if got := result.Next.ManagedRecords[0]; got.Hostname != "old.local" || got.Answer != "10.0.0.12" {
+			t.Fatalf("expected retained managed record to stay unchanged, got %+v", got)
 		}
 	})
 
@@ -501,7 +501,25 @@ func TestReconcilePlanApply(t *testing.T) {
 	})
 }
 
-func TestLogReconcilePlanStaleOwnedDeleteCountsRequireOwnershipProof(t *testing.T) {
+func TestReconcilePlanCreatesAtMostOneRecordPerEmptyNormalizedHostname(t *testing.T) {
+	t.Parallel()
+
+	provider := contracts.ProviderRef{Type: "adguard", Name: "primary"}
+	desired := []contracts.DesiredRecord{
+		{Hostname: "APP.local.", Answer: "10.0.0.11", Source: contracts.SourceObjectRef{Provider: contracts.ProviderRef{Type: "docker", Name: "local"}, ID: "container-b"}},
+		{Hostname: "app.local", Answer: "10.0.0.10", Source: contracts.SourceObjectRef{Provider: contracts.ProviderRef{Type: "docker", Name: "local"}, ID: "container-a"}},
+	}
+
+	plan := buildReconcilePlan(provider, desired, nil, state.EmptySnapshot())
+	if got := len(plan.Creates); got != 1 {
+		t.Fatalf("expected one create for duplicate normalized hostname, got %d", got)
+	}
+	if got := plan.Creates[0].Source.ID; got != "container-a" {
+		t.Fatalf("expected deterministic create selection, got source %q", got)
+	}
+}
+
+func TestLogReconcilePlanStaleOwnedDeleteCounts(t *testing.T) {
 	t.Parallel()
 
 	provider := contracts.ProviderRef{Type: "adguard", Name: "primary"}
@@ -518,14 +536,14 @@ func TestLogReconcilePlanStaleOwnedDeleteCountsRequireOwnershipProof(t *testing.
 				Output:     provider,
 				Hostname:   "STALE.local",
 				Answer:     "10.0.0.12",
-				Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale"},
+				Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale", InstallationID: "123e4567-e89b-42d3-a456-426614174000"},
 			}},
-			Owned: state.Snapshot{ManagedRecords: []state.ManagedRecord{{
+			Owned: state.Snapshot{InstallationID: "123e4567-e89b-42d3-a456-426614174000", ManagedRecords: []state.ManagedRecord{{
 				Output:     provider,
 				Source:     source,
 				Hostname:   "stale.local",
 				Answer:     "10.0.0.12",
-				Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale"},
+				Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale", InstallationID: "123e4567-e89b-42d3-a456-426614174000"},
 			}}},
 			Logger: logger,
 		}
@@ -537,7 +555,7 @@ func TestLogReconcilePlanStaleOwnedDeleteCountsRequireOwnershipProof(t *testing.
 		}
 	})
 
-	t.Run("same-key stale owned record without proof logs deletes=0", func(t *testing.T) {
+	t.Run("same-key stale AdGuard record without proof logs deletes=0", func(t *testing.T) {
 		t.Parallel()
 
 		var logs bytes.Buffer
@@ -566,43 +584,6 @@ func TestLogReconcilePlanStaleOwnedDeleteCountsRequireOwnershipProof(t *testing.
 	})
 }
 
-func TestStaleOwnedSameKeyWithoutOwnershipProofRetainsState(t *testing.T) {
-	t.Parallel()
-
-	provider := contracts.ProviderRef{Type: "adguard", Name: "primary"}
-	source := contracts.SourceObjectRef{Provider: contracts.ProviderRef{Type: "docker", Name: "local"}, ID: "ctr-1", DisplayName: "svc"}
-	fakeOutput := &reconcileFakeOutput{provider: provider}
-	owned := state.Snapshot{ManagedRecords: []state.ManagedRecord{{
-		Output:   provider,
-		Source:   source,
-		Hostname: "old.local",
-		Answer:   "10.0.0.12",
-	}}}
-
-	result, err := ReconcileOutput(context.Background(), ReconcileInput{
-		Output:  fakeOutput,
-		Desired: nil,
-		Visible: []contracts.VisibleRecord{
-			{Output: provider, Hostname: "OLD.local", Answer: "10.0.0.12"},
-			{Output: provider, Hostname: "manual.local", Answer: "10.0.0.50"},
-		},
-		Owned: owned,
-	})
-	if err != nil {
-		t.Fatalf("reconcile output: %v", err)
-	}
-
-	if got := len(fakeOutput.deleted); got != 0 {
-		t.Fatalf("expected no delete calls without unique ownership proof, got %d", got)
-	}
-	if got := len(result.Next.ManagedRecords); got != 1 {
-		t.Fatalf("expected stale owned state to be retained without ownership proof, got %d managed records", got)
-	}
-	if result.Next.ManagedRecords[0].Hostname != "old.local" || result.Next.ManagedRecords[0].Answer != "10.0.0.12" {
-		t.Fatalf("expected retained stale owned record to stay unchanged, got %+v", result.Next.ManagedRecords[0])
-	}
-}
-
 func TestRetainedStaleOwnedStateAllowsLaterDisplayLineageUpdateWithoutVisibleProvenance(t *testing.T) {
 	t.Parallel()
 
@@ -622,6 +603,7 @@ func TestRetainedStaleOwnedStateAllowsLaterDisplayLineageUpdateWithoutVisiblePro
 		Desired: nil,
 		Visible: []contracts.VisibleRecord{{Output: provider, Hostname: "whoami.test", Answer: "127.0.0.1"}},
 		Owned:   owned,
+		Grace:   time.Hour,
 	})
 	if err != nil {
 		t.Fatalf("first reconcile output: %v", err)

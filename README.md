@@ -18,7 +18,7 @@
 - Performs a full reconcile on startup using Docker snapshot state and the persisted ownership file.
 - Watches Docker for container lifecycle hints and reruns reconciliation after changes.
 - Retries temporary AdGuard failures with bounded backoff before giving up.
-- Only deletes stale remote rewrites when exactly one visible record carries non-empty daemon-owned provenance; same-key records without provenance, ambiguous duplicates, and unrelated manual records are preserved instead of being deleted on label changes alone.
+- Deletes a stale AdGuard rewrite when exactly one visible record matches its daemon state entry's hostname and answer. This state-backed cleanup can delete an indistinguishable manual replacement; ambiguous duplicates remain blocked.
 - A global removal grace period defaults to ten minutes and applies consistently to daemon-owned DNS records and tunnel resources; updates remain immediate.
 - Logs are structured on stdout and can be duplicated to a concurrency-safe rotating `LOG_FILE` sink.
 
@@ -63,7 +63,7 @@ connector sidecar. Never grant or document real tokens inline.
 - Live verification requires `docker`, `docker compose`, and `curl`; `dig` is optional because the script falls back to containerized `nslookup`.
 - The live test is not part of the default Docker-free `go test` / `go vet` path and cleans up with `docker compose ... down -v` plus temporary runtime directory removal unless `--keep-running` or `KEEP_RUNNING=1` is used; keep-running mode prints the manual cleanup commands you must run after inspection.
 - Keep secrets out of logs and shell history: use env references, do not paste real credentials inline, and avoid dumping compose logs by default.
-- Stale remote cleanup is intentionally conservative: deletion requires unique daemon-owned provenance that the output can still see. Providers that cannot expose that proof, such as current AdGuard rewrite listing, leave same-key records in place rather than risk deleting operator-managed DNS.
+- Stale AdGuard cleanup is state-backed: one exact visible hostname/answer match is deleted after its workload is removed. Because AdGuard exposes no stable rewrite ID, do not manually replace a daemon-managed rewrite with the same values if you need it preserved.
 - Renovate is configured through `renovate.json` for Go modules, GitHub Actions, and container image references.
 
 ## Release Automation

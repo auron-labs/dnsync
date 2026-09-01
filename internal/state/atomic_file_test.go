@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,8 +100,123 @@ func TestStoreLoadLegacySnapshotWithoutProvenance(t *testing.T) {
 	if snapshot.Version != SnapshotVersion {
 		t.Fatalf("expected legacy snapshot to migrate to version %d, got %d", SnapshotVersion, snapshot.Version)
 	}
+	if err := validateInstallationID(snapshot.InstallationID); err != nil {
+		t.Fatalf("expected migrated installation ID to be valid: %v", err)
+	}
 	if snapshot.ManagedRecords[0].Provenance != nil {
 		t.Fatalf("expected legacy record provenance to remain nil, got %+v", snapshot.ManagedRecords[0].Provenance)
+	}
+
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read migrated state: %v", err)
+	}
+	var migrated Snapshot
+	if err := json.Unmarshal(persisted, &migrated); err != nil {
+		t.Fatalf("decode migrated state: %v", err)
+	}
+	if migrated.Version != SnapshotVersion || migrated.InstallationID != snapshot.InstallationID {
+		t.Fatalf("expected migrated identity to be persisted, got %+v", migrated)
+	}
+
+	reopened, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("reopen migrated store: %v", err)
+	}
+	restarted, err := reopened.Load()
+	if err != nil {
+		t.Fatalf("load reopened store: %v", err)
+	}
+	if restarted.InstallationID != snapshot.InstallationID {
+		t.Fatalf("expected installation ID to remain stable after restart: first=%q restarted=%q", snapshot.InstallationID, restarted.InstallationID)
+	}
+}
+
+func TestNewStoreGeneratesStableUUIDv4InstallationID(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "state.json")
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	first, err := store.Load()
+	if err != nil {
+		t.Fatalf("load initial state: %v", err)
+	}
+	if err := validateInstallationID(first.InstallationID); err != nil {
+		t.Fatalf("expected UUID v4 installation ID: %v", err)
+	}
+	if first.InstallationID[14] != '4' || !strings.ContainsRune("89ab", rune(first.InstallationID[19])) {
+		t.Fatalf("expected UUID v4 version and variant bits, got %q", first.InstallationID)
+	}
+
+	restarted, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	second, err := restarted.Load()
+	if err != nil {
+		t.Fatalf("load restarted state: %v", err)
+	}
+	if second.InstallationID != first.InstallationID {
+		t.Fatalf("expected installation ID to remain stable: first=%q second=%q", first.InstallationID, second.InstallationID)
+	}
+}
+
+func TestStoreMigratesV2SnapshotWithStableInstallationID(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{"version":2,"managed_records":[],"managed_tunnels":[]}`), 0o600); err != nil {
+		t.Fatalf("write v2 snapshot: %v", err)
+	}
+
+	store, err := NewStore(path)
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	first, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if first.Version != SnapshotVersion || validateInstallationID(first.InstallationID) != nil {
+		t.Fatalf("expected valid migrated v2 snapshot, got %+v", first)
+	}
+
+	if err := store.Save(first); err != nil {
+		t.Fatalf("save migrated snapshot: %v", err)
+	}
+	second, err := store.Load()
+	if err != nil {
+		t.Fatalf("reload migrated snapshot: %v", err)
+	}
+	if second.InstallationID != first.InstallationID {
+		t.Fatalf("expected v2 installation ID to remain stable: first=%q second=%q", first.InstallationID, second.InstallationID)
+	}
+}
+
+func TestStoreRejectsInvalidNewSnapshotInstallationID(t *testing.T) {
+	t.Parallel()
+
+	for _, id := range []string{"", "not-a-uuid", "123e4567-e89b-12d3-a456-426614174000"} {
+		id := id
+		t.Run(id, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "state.json")
+			payload, err := json.Marshal(Snapshot{Version: SnapshotVersion, InstallationID: id, ManagedRecords: []ManagedRecord{}, ManagedTunnels: []ManagedTunnel{}})
+			if err != nil {
+				t.Fatalf("marshal invalid snapshot: %v", err)
+			}
+			if err := os.WriteFile(path, payload, 0o600); err != nil {
+				t.Fatalf("write invalid snapshot: %v", err)
+			}
+
+			if _, err := NewStore(path); err == nil || !strings.Contains(err.Error(), "installation ID") {
+				t.Fatalf("expected clear installation ID error, got %v", err)
+			}
+		})
 	}
 }
 

@@ -29,6 +29,7 @@ type RetryPolicy struct {
 type RuntimeDeps struct {
 	Logger            *slog.Logger
 	LogLevel          slog.Level
+	InstallationID    string
 	OperationTimeout  time.Duration
 	RemovalGrace      time.Duration
 	Retry             RetryPolicy

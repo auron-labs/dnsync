@@ -85,18 +85,16 @@ daemon or waiting for the next Docker event.
 
 ### Stale DNS records are not getting deleted
 
-**Cause (almost always):** The output provider cannot surface proof that a
-visible same-key record belongs to the daemon. AdGuard's default rewrite
-listing exposes only the hostname and answer, with no stable unique
-identifier, so the daemon leaves same-key records in place rather than risk
-deleting an operator-owned one. Cloudflare's API does expose record IDs, so
-the same safety rule produces a destructive cleanup there.
+**Cause (almost always):** The output has an ambiguous duplicate hostname and
+answer pair, so the reconciler refuses to select one. A unique stale AdGuard
+hostname/answer match is deleted from daemon state after the removal grace
+period. Other outputs still require visible daemon-owned provenance.
 
 **Fix:**
 
 - Confirm the record is actually stale (label removed, container gone).
-- If you accept the risk, remove the record manually from the output. The
-  next reconcile will not recreate it.
+- Remove duplicate hostname/answer entries from the output, then trigger
+  another reconcile.
 - See [Architecture → Reconciliation model](architecture.md#reconciliation-model)
   for the precise rule.
 

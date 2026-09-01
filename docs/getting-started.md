@@ -168,9 +168,7 @@ What that covers:
 - restart recovery
 - persisted removal grace and cancellation when the workload returns
 - dual stdout and file logging with `0600` permissions
-- stale-delete verification is intentionally skipped in the default harness
-  because AdGuard's rewrite listing does not expose proof-bearing provenance
-  — same-key records are left in place rather than risked
+- stale AdGuard rewrite deletion after its workload is removed
 
 The script tears the stack down with `docker compose ... down -v` and removes
 the temporary runtime bind-mount directories by default. To inspect the stack

@@ -112,6 +112,10 @@ rewrite_present() {
 	esac
 }
 
+rewrite_absent() {
+	! rewrite_present "$@"
+}
+
 wait_until() {
 	timeout_seconds=$1
 	interval_seconds=$2
@@ -253,6 +257,8 @@ grep -q 'starting docker-dns-sync runtime' "$LOG_SNAPSHOT_PATH" || fail "log fil
 log_permissions=$(stat -c '%a' "$LOG_SNAPSHOT_PATH" 2>/dev/null || stat -f '%Lp' "$LOG_SNAPSHOT_PATH")
 [ "$log_permissions" = "600" ] || fail "expected rotated log file mode 600, got $log_permissions"
 
-log "verify: skipping stale-delete live assertion; AdGuard visible rewrites do not expose unique provenance for same-key ownership proof"
+log "verify: deleting the stale managed rewrite"
+run_compose stop whoami
+wait_until 30 1 "AdGuard did not delete the stale managed rewrite" rewrite_absent "$MANAGED_DOMAIN" "$MANAGED_ORIGINAL_ANSWER"
 
 log "verify: live-test smoke passed"

@@ -56,6 +56,11 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	owned, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("load state before provider setup: %w", err)
+	}
+	deps.InstallationID = owned.InstallationID
 
 	sources, outputs, err := a.registry.BuildProviders(resolved, deps)
 	if err != nil {

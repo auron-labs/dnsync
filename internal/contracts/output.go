@@ -3,7 +3,8 @@ package contracts
 import "context"
 
 type RecordProvenance struct {
-	RemoteID string
+	RemoteID       string
+	InstallationID string `json:"InstallationID,omitempty"`
 }
 
 type VisibleRecord struct {

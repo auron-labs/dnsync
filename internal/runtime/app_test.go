@@ -57,6 +57,9 @@ func TestAppRunStartupReconcilesAndPersistsState(t *testing.T) {
 	if len(snapshot.ManagedRecords) != 1 {
 		t.Fatalf("expected one persisted managed record, got %d", len(snapshot.ManagedRecords))
 	}
+	if snapshot.InstallationID == "" {
+		t.Fatal("expected persisted installation ID")
+	}
 	if snapshot.ManagedRecords[0].Hostname != desired.Hostname || snapshot.ManagedRecords[0].Answer != desired.Answer {
 		t.Fatalf("unexpected persisted record: %+v", snapshot.ManagedRecords[0])
 	}
@@ -307,8 +310,18 @@ func TestReconcileReturnsPromptlyAfterOutputMutationTimeout(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create store: %v", err)
 			}
-			if len(tc.seedOwned) > 0 {
-				if err := store.Save(state.Snapshot{ManagedRecords: append([]state.ManagedRecord(nil), tc.seedOwned...)}); err != nil {
+			seedOwned := append([]state.ManagedRecord(nil), tc.seedOwned...)
+			visible := append([]contracts.VisibleRecord(nil), tc.visible...)
+			if tc.name == "delete" {
+				owned, err := store.Load()
+				if err != nil {
+					t.Fatalf("load generated installation ID: %v", err)
+				}
+				seedOwned[0].Provenance.InstallationID = owned.InstallationID
+				visible[0].Provenance.InstallationID = owned.InstallationID
+			}
+			if len(seedOwned) > 0 {
+				if err := store.Save(state.Snapshot{ManagedRecords: seedOwned}); err != nil {
 					t.Fatalf("seed state store: %v", err)
 				}
 			}
@@ -325,7 +338,7 @@ func TestReconcileReturnsPromptlyAfterOutputMutationTimeout(t *testing.T) {
 			source := &startupSourceStub{provider: provider, desired: append([]contracts.DesiredRecord(nil), tc.desired...)}
 			output := &blockingOutputStub{
 				provider:       outputProvider,
-				visible:        append([]contracts.VisibleRecord(nil), tc.visible...),
+				visible:        visible,
 				blockOperation: tc.operation,
 			}
 
@@ -574,7 +587,7 @@ func TestAppRunStartupUpdatesOwnedHostnameWhenContainerIdentityChanges(t *testin
 	assertRunStops(t, done)
 }
 
-func TestAppRunStartupDeletesSeededStaleOwnedRecordWithMatchingProvenanceAndPersistsEmptyState(t *testing.T) {
+func TestAppRunStartupDeletesSeededStaleOwnedRecordWithMatchingInstallationMarkerAndPersistsEmptyState(t *testing.T) {
 	t.Parallel()
 
 	provider := contracts.ProviderRef{Type: "adguard", Name: "primary"}
@@ -585,12 +598,19 @@ func TestAppRunStartupDeletesSeededStaleOwnedRecordWithMatchingProvenanceAndPers
 	if err != nil {
 		t.Fatalf("create state store: %v", err)
 	}
-	seed := state.Snapshot{ManagedRecords: []state.ManagedRecord{{
-		Output:     provider,
-		Source:     sourceRef,
-		Hostname:   "old.local",
-		Answer:     "10.0.0.12",
-		Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale"},
+	initial, err := store.Load()
+	if err != nil {
+		t.Fatalf("load generated installation ID: %v", err)
+	}
+	seed := state.Snapshot{InstallationID: initial.InstallationID, ManagedRecords: []state.ManagedRecord{{
+		Output:   provider,
+		Source:   sourceRef,
+		Hostname: "old.local",
+		Answer:   "10.0.0.12",
+		Provenance: &contracts.RecordProvenance{
+			RemoteID:       "rec-stale",
+			InstallationID: initial.InstallationID,
+		},
 	}}}
 	if err := store.Save(seed); err != nil {
 		t.Fatalf("seed state store: %v", err)
@@ -604,7 +624,7 @@ func TestAppRunStartupDeletesSeededStaleOwnedRecordWithMatchingProvenanceAndPers
 			Output:     provider,
 			Hostname:   "OLD.local",
 			Answer:     "10.0.0.12",
-			Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale"},
+			Provenance: &contracts.RecordProvenance{RemoteID: "rec-stale", InstallationID: initial.InstallationID},
 		}},
 		onDelete: func() {
 			snapshot, err := store.Load()
@@ -666,7 +686,7 @@ func TestAppRunStartupDeletesSeededStaleOwnedRecordWithMatchingProvenanceAndPers
 	assertRunStops(t, done)
 }
 
-func TestAppRunStartupRetainsSameKeyVisibleRecordStateWithoutProvenanceProof(t *testing.T) {
+func TestAppRunStartupRetainsSameKeyVisibleAdGuardRecordWithoutProvenanceProof(t *testing.T) {
 	t.Parallel()
 
 	provider := contracts.ProviderRef{Type: "adguard", Name: "primary"}
@@ -694,7 +714,9 @@ func TestAppRunStartupRetainsSameKeyVisibleRecordStateWithoutProvenanceProof(t *
 			Answer:   "10.0.0.12",
 		}},
 	}
-	app := New(testRuntimeConfig(statePath))
+	cfg := testRuntimeConfig(statePath)
+	cfg.Runtime.RemovalGracePeriod = "0s"
+	app := New(cfg)
 	app.registry = testRegistry(
 		stubSourceFactory{source: &startupSourceStub{provider: sourceRef.Provider}},
 		stubOutputFactory{output: output},
@@ -707,8 +729,7 @@ func TestAppRunStartupRetainsSameKeyVisibleRecordStateWithoutProvenanceProof(t *
 	}()
 
 	waitForCondition(t, func() bool {
-		snapshot, err := store.Load()
-		return err == nil && len(snapshot.ManagedRecords) == 1
+		return output.listVisibleCount() == 1
 	})
 
 	if got := output.deleteCount(); got != 0 {
@@ -725,14 +746,14 @@ func TestAppRunStartupRetainsSameKeyVisibleRecordStateWithoutProvenanceProof(t *
 		t.Fatalf("expected retained stale owned record to stay unchanged, got %+v", snapshot.ManagedRecords[0])
 	}
 	if visible := output.visibleSnapshot(); len(visible) != 1 {
-		t.Fatalf("expected visible record to remain untouched, got %+v", visible)
+		t.Fatalf("expected visible record to remain, got %+v", visible)
 	}
 
 	cancel()
 	assertRunStops(t, done)
 }
 
-func TestAppReconcileOnceRetainsStaleOwnedStateWithoutDeletingSameKeyVisibleRecord(t *testing.T) {
+func TestAppReconcileOnceRetainsStaleOwnedAdGuardRecordWithUniqueSameKeyVisibleRecordWithoutProvenance(t *testing.T) {
 	t.Parallel()
 
 	provider := contracts.ProviderRef{Type: "adguard", Name: "primary"}
@@ -767,7 +788,7 @@ func TestAppReconcileOnceRetainsStaleOwnedStateWithoutDeletingSameKeyVisibleReco
 		t.Fatalf("reconcile once: %v", err)
 	}
 	if got := output.deleteCount(); got != 0 {
-		t.Fatalf("expected no delete calls without unique ownership proof, got %d", got)
+		t.Fatalf("expected no delete call without provenance, got %d", got)
 	}
 
 	snapshot, err := store.Load()
@@ -781,7 +802,7 @@ func TestAppReconcileOnceRetainsStaleOwnedStateWithoutDeletingSameKeyVisibleReco
 		t.Fatalf("expected retained stale owned record to stay unchanged, got %+v", snapshot.ManagedRecords[0])
 	}
 	if visible := output.visibleSnapshot(); len(visible) != 2 {
-		t.Fatalf("expected visible records to remain untouched, got %+v", visible)
+		t.Fatalf("expected visible records to remain, got %+v", visible)
 	}
 }
 

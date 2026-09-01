@@ -1,15 +1,20 @@
 package state
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
 )
 
-const SnapshotVersion = 2
+const SnapshotVersion = 3
 
 type Snapshot struct {
 	Version        int             `json:"version"`
+	InstallationID string          `json:"installation_id"`
 	ManagedRecords []ManagedRecord `json:"managed_records"`
 	ManagedTunnels []ManagedTunnel `json:"managed_tunnels"`
 }
@@ -52,4 +57,47 @@ func EmptySnapshot() Snapshot {
 		ManagedRecords: []ManagedRecord{},
 		ManagedTunnels: []ManagedTunnel{},
 	}
+}
+
+func newInstallationID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("generate installation ID: %w", err)
+	}
+
+	raw[6] = (raw[6] & 0x0f) | 0x40
+	raw[8] = (raw[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(raw[:])
+	return strings.Join([]string{
+		encoded[:8],
+		encoded[8:12],
+		encoded[12:16],
+		encoded[16:20],
+		encoded[20:],
+	}, "-"), nil
+}
+
+func validateInstallationID(id string) error {
+	if id == "" {
+		return fmt.Errorf("installation ID is required")
+	}
+	if len(id) != 36 || id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-' {
+		return fmt.Errorf("installation ID %q must be a canonical UUID v4", id)
+	}
+	for i, char := range id {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			continue
+		}
+		if !isHexDigit(char) {
+			return fmt.Errorf("installation ID %q must be a canonical UUID v4", id)
+		}
+	}
+	if id[14] != '4' || !strings.ContainsRune("89abAB", rune(id[19])) {
+		return fmt.Errorf("installation ID %q must be a canonical UUID v4", id)
+	}
+	return nil
+}
+
+func isHexDigit(char rune) bool {
+	return char >= '0' && char <= '9' || char >= 'a' && char <= 'f' || char >= 'A' && char <= 'F'
 }

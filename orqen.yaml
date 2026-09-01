@@ -1,0 +1,34 @@
+agent:
+    - codex
+    - opencode
+scope: project
+skills:
+    - source: https://github.com/Jeffallan/claude-skills
+      skills:
+        - api-designer
+        - architecture-designer
+        - code-documenter
+        - fullstack-guardian
+        - golang-pro
+        - test-master
+        - the-fool
+    - source: https://github.com/mattpocock/skills
+      skills:
+        - ask-matt
+        - code-review
+        - codebase-design
+        - grill-with-docs
+        - implement
+        - improve-codebase-architecture
+        - resolving-merge-conflicts
+        - setup-matt-pocock-skills
+        - tdd
+        - to-spec
+        - to-tickets
+        - to-questionnaire
+        - wait-what
+        - wayfinder
+        - wizard
+    - source: https://github.com/cursor/plugins
+      skills:
+        - thermo-nuclear-code-quality-review

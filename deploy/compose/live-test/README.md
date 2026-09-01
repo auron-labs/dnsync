@@ -34,7 +34,7 @@ What it covers by default:
 - restart recovery
 - persisted removal grace and cancellation when the workload returns
 - dual stdout/file logging, `0600` log permissions, and the configured rotation settings
-- stale-delete verification is currently skipped in the default AdGuard harness because its visible rewrite API does not expose proof-bearing provenance
+- stale AdGuard rewrite deletion after the removal grace period
 
 Cleanup defaults to `docker compose -f deploy/compose/live-test/compose.yaml down -v` on exit and removes the temporary runtime bind-mount directories. Keep the stack running only when you need to inspect it:
 
@@ -61,13 +61,7 @@ Docker so the test can preserve the daemon's `0600` permissions.
 
 ## Scope note
 
-The live harness stays non-destructive unless the output can prove same-key ownership safely.
-
-- The current live harness always skips the stale-delete step.
-- AdGuard Home's visible rewrite API currently exposes only the hostname/answer pair, not a unique record identity or other stable provenance.
-- Because same-key manual and managed rewrites are indistinguishable in that API, `mise run live-test` logs the stale-delete assertion as skipped instead of stopping the sample workload and risking a destructive delete.
-
-This matches the reconcile safety rule: without ownership proof, stale cleanup must remain non-destructive.
+The live harness verifies deletion of one stale AdGuard rewrite matching the hostname/answer in daemon state. AdGuard Home exposes no stable rewrite ID, so this policy can delete an indistinguishable manual replacement. Same-key duplicates remain blocked and are not covered by the harness.
 
 ## Why The Sample Labels Look Like This
 

@@ -125,7 +125,7 @@ func TestBuildProvidersIncludesCloudflareOutput(t *testing.T) {
 			{Type: "adguard", Name: "primary-adguard", URL: "http://127.0.0.1:3000", Username: "admin", Password: "secret"},
 			{Type: "cloudflare", Name: "primary-cloudflare", ZoneID: "zone-123", APIKey: "token"},
 		},
-	}, RuntimeDeps{})
+	}, RuntimeDeps{InstallationID: "123e4567-e89b-42d3-a456-426614174000"})
 	if err != nil {
 		t.Fatalf("build providers: %v", err)
 	}

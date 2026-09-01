@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
@@ -62,6 +63,11 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 		lineage := ownedLineageKey(output.Type, output.Name, d.Source.Provider.Type, d.Source.Provider.Name, d.Source.ID, d.Hostname)
 		desiredByLineage[lineage] = d
 	}
+	desiredLineages := make([]string, 0, len(desiredByLineage))
+	for lineage := range desiredByLineage {
+		desiredLineages = append(desiredLineages, lineage)
+	}
+	sort.Strings(desiredLineages)
 
 	ownedByLineage := make(map[string]state.ManagedRecord)
 	ownedByDisplayLineage := make(map[string][]state.ManagedRecord)
@@ -78,8 +84,11 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 		ownedByHostname[hostname] = append(ownedByHostname[hostname], m)
 	}
 	matchedOwnedLineages := make(map[string]struct{}, len(ownedByLineage))
+	plannedCreateHostnames := make(map[string]struct{})
+	matchedVisibleKeys := make(map[string]struct{})
 
-	for lineage, d := range desiredByLineage {
+	for _, lineage := range desiredLineages {
+		d := desiredByLineage[lineage]
 		matchedByHostnameOnly := false
 		ownedRecord, ok := ownedByLineage[lineage]
 		if !ok {
@@ -104,10 +113,11 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 			oldKey := visibleRecordKey(ownedRecord.Hostname, ownedRecord.Answer)
 			newKey := visibleRecordKey(d.Hostname, d.Answer)
 			if len(visibleByKey[oldKey]) == 1 && visibleRecordKey(d.Hostname, d.Answer) != oldKey {
-				if canUpdateOwnedVisibleRecord(ownedRecord, visibleByKey[oldKey][0], matchedByHostnameOnly) {
+				if canUpdateOwnedVisibleRecord(owned.InstallationID, ownedRecord, visibleByKey[oldKey][0], matchedByHostnameOnly) {
 					if ownedLineage != lineage {
 						pl.UpdateDrops[lineage] = ownedRecord
 					}
+					matchedVisibleKeys[oldKey] = struct{}{}
 					pl.Updates = append(pl.Updates, reconcileUpdateCall{From: visibleByKey[oldKey][0], To: d})
 					continue
 				}
@@ -117,10 +127,11 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 				continue
 			}
 			if len(hostnameMatches) == 1 && newKey != visibleRecordKey(hostnameMatches[0].Hostname, hostnameMatches[0].Answer) {
-				if canUpdateOwnedVisibleRecord(ownedRecord, hostnameMatches[0], matchedByHostnameOnly) {
+				if canUpdateOwnedVisibleRecord(owned.InstallationID, ownedRecord, hostnameMatches[0], matchedByHostnameOnly) {
 					if ownedLineage != lineage {
 						pl.UpdateDrops[lineage] = ownedRecord
 					}
+					matchedVisibleKeys[visibleRecordKey(hostnameMatches[0].Hostname, hostnameMatches[0].Answer)] = struct{}{}
 					pl.Updates = append(pl.Updates, reconcileUpdateCall{From: hostnameMatches[0], To: d})
 					continue
 				}
@@ -130,26 +141,38 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 				if len(hostnameMatches) > 0 {
 					continue
 				}
+				hostname := normalizeHostname(d.Hostname)
+				if _, planned := plannedCreateHostnames[hostname]; planned {
+					continue
+				}
 				if ownedLineage != lineage {
 					pl.CreateDrops[lineage] = ownedRecord
 				}
 				pl.Creates = append(pl.Creates, d)
+				plannedCreateHostnames[hostname] = struct{}{}
 				continue
 			}
-			if visibleByKey[newKey][0].Proxied != d.Proxied && canUpdateOwnedVisibleRecord(ownedRecord, visibleByKey[newKey][0], matchedByHostnameOnly) {
+			if visibleByKey[newKey][0].Proxied != d.Proxied && canUpdateOwnedVisibleRecord(owned.InstallationID, ownedRecord, visibleByKey[newKey][0], matchedByHostnameOnly) {
 				if ownedLineage != lineage {
 					pl.UpdateDrops[lineage] = ownedRecord
 				}
+				matchedVisibleKeys[newKey] = struct{}{}
 				pl.Updates = append(pl.Updates, reconcileUpdateCall{From: visibleByKey[newKey][0], To: d})
 				continue
 			}
 			provenance := copyRecordProvenance(ownedRecord.Provenance)
-			if sameRecordProvenance(ownedRecord.Provenance, visibleByKey[newKey][0].Provenance) {
+			if hasCurrentRecordOwnership(owned.InstallationID, ownedRecord, visibleByKey[newKey][0]) {
 				provenance = copyRecordProvenance(visibleByKey[newKey][0].Provenance)
+			}
+			if shouldTagLegacyRecord(owned.InstallationID, ownedRecord, visibleByKey[newKey][0]) {
+				matchedVisibleKeys[newKey] = struct{}{}
+				pl.Updates = append(pl.Updates, reconcileUpdateCall{From: visibleByKey[newKey][0], To: d})
+				continue
 			}
 			if ownedLineage != lineage {
 				pl.KeepDrops[lineage] = ownedRecord
 			}
+			matchedVisibleKeys[newKey] = struct{}{}
 			pl.NextManaged = append(pl.NextManaged, state.ManagedRecord{
 				Output:     output,
 				Source:     d.Source,
@@ -162,8 +185,36 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 		}
 
 		key := visibleRecordKey(d.Hostname, d.Answer)
-		if len(visibleByKey[key]) == 0 && len(visibleByHostname[normalizeHostname(d.Hostname)]) == 0 {
+		hostname := normalizeHostname(d.Hostname)
+		if len(ownedByHostname[hostname]) == 0 && len(visibleByKey[key]) == 1 && len(visibleByHostname[hostname]) == 1 && hasCurrentInstallationMarker(visibleByKey[key][0].Provenance, owned.InstallationID) {
+			if _, matched := matchedVisibleKeys[key]; !matched {
+				pl.NextManaged = append(pl.NextManaged, state.ManagedRecord{
+					Output:     output,
+					Source:     d.Source,
+					Hostname:   d.Hostname,
+					Answer:     d.Answer,
+					Proxied:    d.Proxied,
+					Provenance: copyRecordProvenance(visibleByKey[key][0].Provenance),
+				})
+				matchedVisibleKeys[key] = struct{}{}
+				continue
+			}
+		}
+		if len(visibleByHostname[hostname]) == 1 && len(visibleByKey[key]) == 0 && hasCurrentInstallationMarker(visibleByHostname[hostname][0].Provenance, owned.InstallationID) {
+			visibleRecord := visibleByHostname[hostname][0]
+			visibleKey := visibleRecordKey(visibleRecord.Hostname, visibleRecord.Answer)
+			if _, matched := matchedVisibleKeys[visibleKey]; !matched {
+				pl.Updates = append(pl.Updates, reconcileUpdateCall{From: visibleRecord, To: d})
+				matchedVisibleKeys[visibleKey] = struct{}{}
+				continue
+			}
+		}
+		if len(visibleByKey[key]) == 0 && len(visibleByHostname[hostname]) == 0 {
+			if _, planned := plannedCreateHostnames[hostname]; planned {
+				continue
+			}
 			pl.Creates = append(pl.Creates, d)
+			plannedCreateHostnames[hostname] = struct{}{}
 		}
 	}
 
@@ -182,7 +233,7 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 			pl.NextManaged = append(pl.NextManaged, m)
 			continue
 		}
-		if visible, ok := staleOwnedDeleteVisibleRecord(m, visibleByKey); ok {
+		if visible, ok := staleOwnedDeleteVisibleRecord(owned.InstallationID, m, visibleByKey, visibleByHostname); ok {
 			pl.Deletes = append(pl.Deletes, reconcileDeleteCall{Visible: visible, Managed: m})
 			continue
 		}
@@ -198,6 +249,20 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 		pl.Drops = append(pl.Drops, m)
 	}
 
+	for key, records := range visibleByKey {
+		if len(records) != 1 {
+			continue
+		}
+		visible := records[0]
+		if _, matched := matchedVisibleKeys[key]; matched || len(ownedByHostname[normalizeHostname(visible.Hostname)]) != 0 || len(visibleByHostname[normalizeHostname(visible.Hostname)]) != 1 || !hasCurrentInstallationMarker(visible.Provenance, owned.InstallationID) {
+			continue
+		}
+		pl.Deletes = append(pl.Deletes, reconcileDeleteCall{
+			Visible: visible,
+			Managed: state.ManagedRecord{Output: output, Hostname: visible.Hostname, Answer: visible.Answer, Provenance: copyRecordProvenance(visible.Provenance)},
+		})
+	}
+
 	sort.Slice(pl.Creates, func(i, j int) bool {
 		return visibleRecordKey(pl.Creates[i].Hostname, pl.Creates[i].Answer) < visibleRecordKey(pl.Creates[j].Hostname, pl.Creates[j].Answer)
 	})
@@ -211,33 +276,53 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 	return pl
 }
 
-func staleOwnedDeleteVisibleRecord(managed state.ManagedRecord, visibleByKey map[string][]contracts.VisibleRecord) (contracts.VisibleRecord, bool) {
+func staleOwnedDeleteVisibleRecord(installationID string, managed state.ManagedRecord, visibleByKey, visibleByHostname map[string][]contracts.VisibleRecord) (contracts.VisibleRecord, bool) {
 	key := visibleRecordKey(managed.Hostname, managed.Answer)
 	matches := visibleByKey[key]
-	if len(matches) != 1 {
-		return contracts.VisibleRecord{}, false
+	if len(matches) == 1 {
+		visible := matches[0]
+		if hasCurrentRecordOwnership(installationID, managed, visible) {
+			return visible, true
+		}
 	}
-	if !sameRecordProvenance(managed.Provenance, matches[0].Provenance) {
-		return contracts.VisibleRecord{}, false
+	if len(matches) == 0 {
+		hostnameMatches := visibleByHostname[normalizeHostname(managed.Hostname)]
+		if len(hostnameMatches) == 1 && hasCurrentRecordOwnership(installationID, managed, hostnameMatches[0]) {
+			return hostnameMatches[0], true
+		}
 	}
 
-	return matches[0], true
+	return contracts.VisibleRecord{}, false
 }
 
 func shouldRetainManagedRecordWithoutProof(managed state.ManagedRecord, visibleByHostname map[string][]contracts.VisibleRecord) bool {
 	return len(visibleByHostname[normalizeHostname(managed.Hostname)]) > 0
 }
 
-func canUpdateOwnedVisibleRecord(owned state.ManagedRecord, visible contracts.VisibleRecord, matchedByHostnameOnly bool) bool {
+func canUpdateOwnedVisibleRecord(installationID string, owned state.ManagedRecord, visible contracts.VisibleRecord, matchedByHostnameOnly bool) bool {
+	if hasInstallationMarker(visible.Provenance) {
+		return hasCurrentInstallationMarker(visible.Provenance, installationID) && sameRecordProvenance(owned.Provenance, visible.Provenance)
+	}
 	if hasRecordProvenance(visible.Provenance) {
-		return sameRecordProvenance(owned.Provenance, visible.Provenance)
+		return !hasInstallationMarker(owned.Provenance) && sameRecordProvenance(owned.Provenance, visible.Provenance)
 	}
+	return !matchedByHostnameOnly && !hasRecordProvenance(owned.Provenance) && !hasInstallationMarker(owned.Provenance)
+}
 
-	if !matchedByHostnameOnly {
-		return true
-	}
+func hasCurrentInstallationMarker(provenance *contracts.RecordProvenance, installationID string) bool {
+	return hasRecordProvenance(provenance) && hasInstallationMarker(provenance) && strings.EqualFold(strings.TrimSpace(provenance.InstallationID), strings.TrimSpace(installationID))
+}
 
-	return false
+func hasCurrentRecordOwnership(installationID string, managed state.ManagedRecord, visible contracts.VisibleRecord) bool {
+	return hasCurrentInstallationMarker(visible.Provenance, installationID) && sameRecordProvenance(managed.Provenance, visible.Provenance)
+}
+
+func shouldTagLegacyRecord(installationID string, managed state.ManagedRecord, visible contracts.VisibleRecord) bool {
+	return strings.TrimSpace(installationID) != "" && hasRecordProvenance(managed.Provenance) && hasRecordProvenance(visible.Provenance) && !hasInstallationMarker(managed.Provenance) && !hasInstallationMarker(visible.Provenance) && sameRecordProvenance(managed.Provenance, visible.Provenance)
+}
+
+func hasInstallationMarker(provenance *contracts.RecordProvenance) bool {
+	return provenance != nil && strings.TrimSpace(provenance.InstallationID) != ""
 }
 
 func hasRecordProvenance(provenance *contracts.RecordProvenance) bool {

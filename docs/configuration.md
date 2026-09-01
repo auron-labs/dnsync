@@ -163,7 +163,7 @@ Docker sources interpret these labels:
   ports must be numeric from 1 through 65535. The first non-empty network
   endpoint is selected with IPv4 preferred over IPv6.
 
-When a container stops producing a desired record because labels changed, stale remote cleanup is only attempted when the output can prove exactly one visible same-key record is daemon-owned. That proof requires non-empty daemon-owned provenance on the visible record. Same-key matches without provenance, ambiguous duplicates, and unmanaged/manual records are preserved to avoid deleting operator-owned DNS. In practice, providers that cannot surface that provenance during listing leave the remote record in place even if local ownership was previously tracked.
+When a container stops producing a desired record because labels changed, AdGuard cleanup deletes exactly one visible hostname/answer match recorded in daemon state. AdGuard does not expose a stable rewrite ID, so an indistinguishable manual replacement can be deleted. Ambiguous duplicate matches remain blocked. Other outputs still require non-empty daemon-owned provenance before stale cleanup.
 
 Lookup precedence for host overrides is:
 

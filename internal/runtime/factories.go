@@ -36,8 +36,8 @@ func NewDefaultFactoryRegistry() *FactoryRegistry {
 	mustRegister(registry.RegisterOutput("adguard", func(cfg config.OutputConfig, _ RuntimeDeps) (contracts.Output, error) {
 		return adguardprovider.New(cfg), nil
 	}))
-	mustRegister(registry.RegisterOutput("cloudflare", func(cfg config.OutputConfig, _ RuntimeDeps) (contracts.Output, error) {
-		return cloudflareprovider.New(cfg), nil
+	mustRegister(registry.RegisterOutput("cloudflare", func(cfg config.OutputConfig, deps RuntimeDeps) (contracts.Output, error) {
+		return cloudflareprovider.New(cfg, deps.InstallationID)
 	}))
 	return registry
 }

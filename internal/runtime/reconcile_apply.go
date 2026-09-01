@@ -23,7 +23,7 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 
 	progressed := false
 	snapshot := func() state.Snapshot {
-		return snapshotWithOutputRecords(owned.ManagedTunnels, otherRecords, recordsByLineage)
+		return snapshotWithOutputRecords(owned.InstallationID, owned.ManagedTunnels, otherRecords, recordsByLineage)
 	}
 	persistAfterMutation := func() error {
 		if persist == nil {
@@ -98,8 +98,9 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 	return snapshot(), progressed, nil
 }
 
-func snapshotWithOutputRecords(tunnels []state.ManagedTunnel, otherRecords []state.ManagedRecord, recordsByLineage map[string]state.ManagedRecord) state.Snapshot {
+func snapshotWithOutputRecords(installationID string, tunnels []state.ManagedTunnel, otherRecords []state.ManagedRecord, recordsByLineage map[string]state.ManagedRecord) state.Snapshot {
 	next := state.EmptySnapshot()
+	next.InstallationID = installationID
 	next.ManagedRecords = append(next.ManagedRecords, otherRecords...)
 	next.ManagedTunnels = append(next.ManagedTunnels, tunnels...)
 

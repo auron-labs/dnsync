@@ -21,9 +21,10 @@ import (
 )
 
 type Provider struct {
-	ref    contracts.ProviderRef
-	zoneID string
-	client *cloudflare.Client
+	ref            contracts.ProviderRef
+	zoneID         string
+	client         *cloudflare.Client
+	installationID string
 
 	zoneName string
 	mu       sync.RWMutex
@@ -33,6 +34,8 @@ type Provider struct {
 type visibleRecordMeta struct {
 	id string
 }
+
+const ownershipCommentPrefix = "docker-dns-sync:managed-by="
 
 type temporaryError struct {
 	err error
@@ -63,13 +66,19 @@ func (e sanitizedError) Unwrap() error {
 	return e.err
 }
 
-func New(cfg config.OutputConfig) *Provider {
-	return &Provider{
-		ref:     contracts.ProviderRef{Type: cfg.Type, Name: cfg.Name},
-		zoneID:  cfg.ZoneID,
-		client:  cloudflare.NewClient(option.WithAPIToken(cfg.APIKey)),
-		visible: make(map[string]visibleRecordMeta),
+func New(cfg config.OutputConfig, installationID string) (*Provider, error) {
+	installationID = strings.TrimSpace(installationID)
+	if installationID == "" {
+		return nil, errors.New("cloudflare installation ID is required")
 	}
+
+	return &Provider{
+		ref:            contracts.ProviderRef{Type: cfg.Type, Name: cfg.Name},
+		zoneID:         cfg.ZoneID,
+		client:         cloudflare.NewClient(option.WithAPIToken(cfg.APIKey)),
+		installationID: installationID,
+		visible:        make(map[string]visibleRecordMeta),
+	}, nil
 }
 
 func (p *Provider) Provider() contracts.ProviderRef {
@@ -103,7 +112,8 @@ func (p *Provider) ListVisible(ctx context.Context) ([]contracts.VisibleRecord, 
 			Hostname: hostname,
 			Answer:   answer,
 			Provenance: &contracts.RecordProvenance{
-				RemoteID: record.ID,
+				RemoteID:       record.ID,
+				InstallationID: installationIDFromComment(record.Comment),
 			},
 			Proxied: record.Proxied,
 		})
@@ -124,7 +134,8 @@ func (p *Provider) ListVisible(ctx context.Context) ([]contracts.VisibleRecord, 
 }
 
 func (p *Provider) Create(ctx context.Context, desired contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
-	body, err := buildRecordNewBody(desired.Hostname, desired.Answer, desired.Proxied)
+	comment := p.ownershipComment()
+	body, err := buildRecordNewBody(desired.Hostname, desired.Answer, desired.Proxied, comment)
 	if err != nil {
 		return nil, err
 	}
@@ -159,6 +170,10 @@ func (p *Provider) Create(ctx context.Context, desired contracts.DesiredRecord) 
 			return nil, createErr
 		}
 
+		if !p.ownsVisibleRecord(matches[0]) {
+			return nil, createErr
+		}
+
 		if normalizeAnswer(matches[0].Answer) == normalizeAnswer(desired.Answer) {
 			return copyProvenance(matches[0].Provenance), nil
 		}
@@ -171,7 +186,7 @@ func (p *Provider) Create(ctx context.Context, desired contracts.DesiredRecord) 
 		return updated, nil
 	}
 
-	return &contracts.RecordProvenance{RemoteID: created.ID}, nil
+	return &contracts.RecordProvenance{RemoteID: created.ID, InstallationID: p.installationID}, nil
 }
 
 func (p *Provider) Update(ctx context.Context, visible contracts.VisibleRecord, desired contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
@@ -179,8 +194,12 @@ func (p *Provider) Update(ctx context.Context, visible contracts.VisibleRecord, 
 	if err != nil {
 		return nil, err
 	}
+	if visible.Provenance != nil && strings.TrimSpace(visible.Provenance.InstallationID) != "" && !p.ownsVisibleRecord(visible) {
+		return nil, fmt.Errorf("cloudflare visible record %s installation marker does not match provider installation ID", visibleRecordKey(visible.Hostname, visible.Answer))
+	}
 
-	body, err := buildRecordUpdateBody(desired.Hostname, desired.Answer, desired.Proxied)
+	comment := p.ownershipComment()
+	body, err := buildRecordUpdateBody(desired.Hostname, desired.Answer, desired.Proxied, comment)
 	if err != nil {
 		return nil, err
 	}
@@ -193,13 +212,16 @@ func (p *Provider) Update(ctx context.Context, visible contracts.VisibleRecord, 
 		return nil, wrapCloudflareTemporary(fmt.Errorf("update cloudflare dns record: %w", err))
 	}
 
-	return &contracts.RecordProvenance{RemoteID: updated.ID}, nil
+	return &contracts.RecordProvenance{RemoteID: updated.ID, InstallationID: p.installationID}, nil
 }
 
 func (p *Provider) Delete(ctx context.Context, visible contracts.VisibleRecord) error {
 	recordID, err := p.visibleRemoteID(visible)
 	if err != nil {
 		return err
+	}
+	if !p.ownsVisibleRecord(visible) {
+		return fmt.Errorf("cloudflare visible record %s installation marker does not match provider installation ID", visibleRecordKey(visible.Hostname, visible.Answer))
 	}
 
 	_, err = p.client.DNS.Records.Delete(ctx, recordID, dns.RecordDeleteParams{ZoneID: cloudflare.F(p.zoneID)})
@@ -208,6 +230,27 @@ func (p *Provider) Delete(ctx context.Context, visible contracts.VisibleRecord) 
 	}
 
 	return nil
+}
+
+func (p *Provider) ownershipComment() string {
+	return ownershipCommentPrefix + p.installationID
+}
+
+func (p *Provider) ownsVisibleRecord(visible contracts.VisibleRecord) bool {
+	return hasRemoteProvenance(visible.Provenance) && strings.EqualFold(strings.TrimSpace(visible.Provenance.InstallationID), p.installationID)
+}
+
+func installationIDFromComment(comment string) string {
+	comment = strings.TrimSpace(comment)
+	if !strings.HasPrefix(comment, ownershipCommentPrefix) {
+		return ""
+	}
+
+	return strings.TrimSpace(strings.TrimPrefix(comment, ownershipCommentPrefix))
+}
+
+func hasRemoteProvenance(provenance *contracts.RecordProvenance) bool {
+	return provenance != nil && strings.TrimSpace(provenance.RemoteID) != ""
 }
 
 func (p *Provider) EnsureTunnel(ctx context.Context, accountID, name, managedID string) (contracts.TunnelInfo, error) {
@@ -477,7 +520,7 @@ func appendCloudflareErrorCode(codes *[]int64, seen map[int64]struct{}, code int
 	*codes = append(*codes, code)
 }
 
-func buildRecordNewBody(hostname, answer string, proxied bool) (dns.RecordNewParamsBodyUnion, error) {
+func buildRecordNewBody(hostname, answer string, proxied bool, comment string) (dns.RecordNewParamsBodyUnion, error) {
 	name := normalizeHostname(hostname)
 	content := normalizeAnswer(answer)
 	if name == "" {
@@ -492,6 +535,7 @@ func buildRecordNewBody(hostname, answer string, proxied bool) (dns.RecordNewPar
 			return dns.ARecordParam{
 				Name:    cloudflare.F(name),
 				Content: cloudflare.F(content),
+				Comment: cloudflare.F(comment),
 				Proxied: cloudflare.F(proxied),
 				TTL:     cloudflare.F(dns.TTL(1)),
 				Type:    cloudflare.F(dns.ARecordTypeA),
@@ -501,6 +545,7 @@ func buildRecordNewBody(hostname, answer string, proxied bool) (dns.RecordNewPar
 		return dns.AAAARecordParam{
 			Name:    cloudflare.F(name),
 			Content: cloudflare.F(content),
+			Comment: cloudflare.F(comment),
 			Proxied: cloudflare.F(proxied),
 			TTL:     cloudflare.F(dns.TTL(1)),
 			Type:    cloudflare.F(dns.AAAARecordTypeAAAA),
@@ -510,13 +555,14 @@ func buildRecordNewBody(hostname, answer string, proxied bool) (dns.RecordNewPar
 	return dns.CNAMERecordParam{
 		Name:    cloudflare.F(name),
 		Content: cloudflare.F(content),
+		Comment: cloudflare.F(comment),
 		Proxied: cloudflare.F(proxied),
 		TTL:     cloudflare.F(dns.TTL(1)),
 		Type:    cloudflare.F(dns.CNAMERecordTypeCNAME),
 	}, nil
 }
 
-func buildRecordUpdateBody(hostname, answer string, proxied bool) (dns.RecordUpdateParamsBodyUnion, error) {
+func buildRecordUpdateBody(hostname, answer string, proxied bool, comment string) (dns.RecordUpdateParamsBodyUnion, error) {
 	name := normalizeHostname(hostname)
 	content := normalizeAnswer(answer)
 	if name == "" {
@@ -531,6 +577,7 @@ func buildRecordUpdateBody(hostname, answer string, proxied bool) (dns.RecordUpd
 			return dns.ARecordParam{
 				Name:    cloudflare.F(name),
 				Content: cloudflare.F(content),
+				Comment: cloudflare.F(comment),
 				Proxied: cloudflare.F(proxied),
 				TTL:     cloudflare.F(dns.TTL(1)),
 				Type:    cloudflare.F(dns.ARecordTypeA),
@@ -540,6 +587,7 @@ func buildRecordUpdateBody(hostname, answer string, proxied bool) (dns.RecordUpd
 		return dns.AAAARecordParam{
 			Name:    cloudflare.F(name),
 			Content: cloudflare.F(content),
+			Comment: cloudflare.F(comment),
 			Proxied: cloudflare.F(proxied),
 			TTL:     cloudflare.F(dns.TTL(1)),
 			Type:    cloudflare.F(dns.AAAARecordTypeAAAA),
@@ -549,6 +597,7 @@ func buildRecordUpdateBody(hostname, answer string, proxied bool) (dns.RecordUpd
 	return dns.CNAMERecordParam{
 		Name:    cloudflare.F(name),
 		Content: cloudflare.F(content),
+		Comment: cloudflare.F(comment),
 		Proxied: cloudflare.F(proxied),
 		TTL:     cloudflare.F(dns.TTL(1)),
 		Type:    cloudflare.F(dns.CNAMERecordTypeCNAME),

@@ -41,7 +41,6 @@ These are deliberate limits in the current codebase, not gaps in the docs:
 - It will not start without a `-config` path. There are no built-in defaults.
 - It will not invent an answer target for a local Unix Docker socket. Set
   `sources[].host_ip` or label each container with `proxy.<alias>.host`.
-- It will not delete a DNS record on a label change unless the output provider
-  can prove at reconcile time that the visible record belongs to the daemon.
-  This is why AdGuard's default rewrite listing leaves same-key records alone
-  even after a workload is removed.
+- It deletes one stale AdGuard rewrite matching the hostname/answer saved in
+  daemon state. AdGuard exposes no stable ID, so an indistinguishable manual
+  replacement can be deleted; duplicate same-key entries remain blocked.

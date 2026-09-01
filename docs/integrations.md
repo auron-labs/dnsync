@@ -15,7 +15,7 @@ The Docker provider uses the Moby client with API version negotiation. It reads 
 - If `base_domain` is configured on the source, bare aliases are expanded to FQDNs before reconciliation.
 - `exclude_compose_projects` ignores every container whose standard Compose project label matches a configured project name. Matching is case-insensitive and surrounding whitespace in configuration is ignored.
 
-When labels stop producing a record, docker-dns-sync only deletes the visible DNS record if the output can prove exactly one same-key record is daemon-owned with non-empty provenance. Same-key matches without provenance, ambiguous duplicates, and unmanaged/manual records are preserved so the daemon does not delete operator-owned DNS. Providers that cannot expose that proof during listing leave the visible record in place even if local ownership existed earlier.
+When labels stop producing a record, stale cleanup normally requires exactly one same-key record with non-empty daemon-owned provenance. For AdGuard, docker-dns-sync instead deletes exactly one visible hostname/answer match from daemon state. This can delete an indistinguishable manual replacement because AdGuard exposes no stable rewrite ID; ambiguous duplicates remain blocked.
 
 ## AdGuard Home output
 
@@ -28,6 +28,8 @@ The AdGuard provider uses the control API under `/control/rewrite/*` with basic 
 
 Temporary statuses treated as retryable include `408`, `429`, and `5xx` responses.
 
+AdGuard's rewrite listing has no stable record ID. Stale cleanup therefore relies on the hostname/answer persisted by the daemon and is intentionally destructive for a unique exact match.
+
 ## Cloudflare output
 
 The Cloudflare provider uses an API token and a zone ID.
@@ -35,6 +37,7 @@ The Cloudflare provider uses an API token and a zone ID.
 - It lists DNS records for the zone and keeps hostnames as FQDNs in the daemon model.
 - It caches record IDs for update/delete.
 - It creates `A`, `AAAA`, or `CNAME` records based on the target value.
+- It stamps created and updated records with `docker-dns-sync:managed-by=<installation UUID>` and reads that comment during recovery.
 - It recovers duplicate-create error code `81058` by re-reading visible records.
 
 ## Upstream references

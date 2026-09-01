@@ -28,7 +28,7 @@ The daemon does not blindly mirror every visible record. It compares:
 - visible records from each output,
 - owned records from the state snapshot.
 
-That comparison decides whether to create, update, delete, or drop records. Destructive cleanup is gated on unique visible daemon-owned provenance: the planner only deletes a stale remote record when exactly one same-key visible record exposes non-empty daemon-owned proof. Same-key matches without provenance, ambiguous duplicates, and unmanaged/manual records are preserved, so label changes do not imply remote cleanup unless the provider can prove ownership. Only daemon-owned records are persisted back into state.
+That comparison decides whether to create, update, delete, or drop records. Stale cleanup normally requires exactly one same-key visible record with non-empty daemon-owned provenance. AdGuard is the exception: when exactly one visible hostname/answer match exists for a daemon state entry, it is deleted despite lacking provenance. That can delete an indistinguishable manual replacement; ambiguous duplicates remain blocked. Only daemon-owned records are persisted back into state.
 
 ## Recovery behavior
 
@@ -42,4 +42,4 @@ That comparison decides whether to create, update, delete, or drop records. Dest
 
 ## State and ownership
 
-The state file tracks managed records by output/source lineage, not by raw rewrite contents alone. Recovery still depends on what the output can prove at reconcile time: stored ownership alone is not enough to delete a stale remote record unless the provider also surfaces matching daemon-owned provenance. This keeps operator-managed DNS safe even when a provider cannot expose stable remote ownership markers.
+The state file tracks managed records by output/source lineage, not by raw rewrite contents alone. Most outputs need matching daemon-owned provenance to delete a stale remote record. AdGuard uses its persisted hostname/answer pair instead because its rewrite API exposes no stable ID; this trades protection for an indistinguishable manual replacement for automatic cleanup.

@@ -51,8 +51,8 @@ func TestCloudflareListVisibleCachesRecordMetadata(t *testing.T) {
 
 		writeCloudflareJSON(t, w, map[string]any{
 			"result": []map[string]any{
-				{"id": "rec-a", "type": "A", "name": "APP.example.com", "content": "10.0.0.10"},
-				{"id": "rec-cname", "type": "CNAME", "name": "edge.example.com", "content": "origin.internal"},
+				{"id": "rec-a", "type": "A", "name": "APP.example.com", "content": "10.0.0.10", "comment": ownershipCommentPrefix + testInstallationID},
+				{"id": "rec-cname", "type": "CNAME", "name": "edge.example.com", "content": "origin.internal", "comment": ownershipCommentPrefix + "123e4567-e89b-42d3-a456-426614174001"},
 				{"id": "rec-txt", "type": "TXT", "name": "ignored.example.com", "content": "ignored"},
 			},
 			"success":     true,
@@ -77,6 +77,12 @@ func TestCloudflareListVisibleCachesRecordMetadata(t *testing.T) {
 	}
 	if visible[0].Provenance == nil || visible[0].Provenance.RemoteID != "rec-a" {
 		t.Fatalf("expected visible provenance remote ID rec-a, got %+v", visible[0].Provenance)
+	}
+	if visible[0].Provenance.InstallationID != testInstallationID {
+		t.Fatalf("expected visible installation ID %q, got %+v", testInstallationID, visible[0].Provenance)
+	}
+	if visible[1].Provenance == nil || visible[1].Provenance.InstallationID != "123e4567-e89b-42d3-a456-426614174001" {
+		t.Fatalf("expected foreign visible installation ID, got %+v", visible[1].Provenance)
 	}
 	if meta, ok := provider.lookupVisibleRecord("app.example.com", "10.0.0.10"); !ok || meta.id != "rec-a" {
 		t.Fatalf("expected cached record metadata, got %+v ok=%v", meta, ok)
@@ -206,7 +212,7 @@ func TestCloudflareCreateInfersRecordType(t *testing.T) {
 					t.Fatalf("unexpected path: %s", r.URL.Path)
 				}
 				body := decodeBody(t, r)
-				if body["type"] != tt.wantType || body["content"] != tt.wantContent || body["name"] != tt.desired.Hostname {
+				if body["type"] != tt.wantType || body["content"] != tt.wantContent || body["name"] != tt.desired.Hostname || body["comment"] != ownershipCommentPrefix+testInstallationID {
 					t.Fatalf("unexpected create body: %+v", body)
 				}
 				writeCloudflareJSON(t, w, map[string]any{"result": map[string]any{"id": "rec-new"}, "success": true, "errors": []any{}, "messages": []any{}})
@@ -257,7 +263,7 @@ func TestCloudflareCreateRecoversDuplicateRecord(t *testing.T) {
 				return
 			}
 			writeCloudflareJSON(t, w, map[string]any{
-				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.example.com", "content": "127.0.0.1"}},
+				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.example.com", "content": "127.0.0.1", "comment": ownershipCommentPrefix + testInstallationID}},
 				"success":     true,
 				"errors":      []any{},
 				"messages":    []any{},
@@ -318,7 +324,7 @@ func TestCloudflareCreateRecoversDuplicateRecordForSingleLabelHostname(t *testin
 				return
 			}
 			writeCloudflareJSON(t, w, map[string]any{
-				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "agentsview.example.com", "content": "192.168.1.142"}},
+				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "agentsview.example.com", "content": "192.168.1.142", "comment": ownershipCommentPrefix + testInstallationID}},
 				"success":     true,
 				"errors":      []any{},
 				"messages":    []any{},
@@ -386,7 +392,7 @@ func TestCloudflareCreateRecoversValidationErrorChainDuplicateRecord(t *testing.
 				return
 			}
 			writeCloudflareJSON(t, w, map[string]any{
-				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.example.com", "content": "127.0.0.1"}},
+				"result":      []map[string]any{{"id": "rec-a", "type": "A", "name": "whoami.test.example.com", "content": "127.0.0.1", "comment": ownershipCommentPrefix + testInstallationID}},
 				"success":     true,
 				"errors":      []any{},
 				"messages":    []any{},
@@ -444,7 +450,7 @@ func TestCloudflareCreateRecoversSameHostCNAMEConflictWhenVisibleRecordMatches(t
 				return
 			}
 			writeCloudflareJSON(t, w, map[string]any{
-				"result":      []map[string]any{{"id": "rec-cname", "type": "CNAME", "name": "s3.example.com", "content": "origin.internal"}},
+				"result":      []map[string]any{{"id": "rec-cname", "type": "CNAME", "name": "s3.example.com", "content": "origin.internal", "comment": ownershipCommentPrefix + testInstallationID}},
 				"success":     true,
 				"errors":      []any{},
 				"messages":    []any{},
@@ -505,7 +511,7 @@ func TestCloudflareCreateTakesOverUniqueHostnameConflictByUpdatingRecord(t *test
 					return
 				}
 				writeCloudflareJSON(t, w, map[string]any{
-					"result":      []map[string]any{{"id": "rec-cname", "type": "CNAME", "name": "s3.example.com", "content": "origin.internal"}},
+					"result":      []map[string]any{{"id": "rec-cname", "type": "CNAME", "name": "s3.example.com", "content": "origin.internal", "comment": ownershipCommentPrefix + testInstallationID}},
 					"success":     true,
 					"errors":      []any{},
 					"messages":    []any{},
@@ -603,6 +609,55 @@ func TestCloudflareCreateDuplicateWithoutVisibleMatchFails(t *testing.T) {
 	}
 	if _, ok := provider.lookupVisibleRecord("app.example.com", "10.0.0.10"); ok {
 		t.Fatal("expected duplicate conflict to avoid caching unproven ownership")
+	}
+}
+
+func TestCloudflareCreateDoesNotClaimUnmarkedDuplicate(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertBearerToken(t, r)
+		if !strings.HasSuffix(r.URL.Path, "/zones/zone-123/dns_records") {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		switch r.Method {
+		case http.MethodPost:
+			w.WriteHeader(http.StatusBadRequest)
+			writeCloudflareJSON(t, w, map[string]any{
+				"result":   nil,
+				"success":  false,
+				"errors":   []map[string]any{{"code": 81058, "message": "An identical record already exists."}},
+				"messages": []any{},
+			})
+		case http.MethodGet:
+			if r.URL.Query().Get("page") == "2" {
+				writeCloudflareJSON(t, w, map[string]any{
+					"result":      []map[string]any{},
+					"success":     true,
+					"errors":      []any{},
+					"messages":    []any{},
+					"result_info": map[string]any{"page": 2, "per_page": 100},
+				})
+				return
+			}
+			writeCloudflareJSON(t, w, map[string]any{
+				"result":      []map[string]any{{"id": "manual-rec", "type": "A", "name": "app.example.com", "content": "10.0.0.10"}},
+				"success":     true,
+				"errors":      []any{},
+				"messages":    []any{},
+				"result_info": map[string]any{"page": 1, "per_page": 100},
+			})
+		default:
+			t.Fatalf("unexpected method: %s", r.Method)
+		}
+	}))
+	defer server.Close()
+
+	provider := newTestProvider(server.URL)
+	provider.zoneName = "example.com"
+	if _, err := provider.Create(context.Background(), contracts.DesiredRecord{Hostname: "app.example.com", Answer: "10.0.0.10"}); err == nil {
+		t.Fatal("expected unmarked duplicate recovery to fail")
 	}
 }
 
@@ -908,7 +963,7 @@ func TestCloudflareCreateUpdateAndDeleteClassifyCloudflareIOErrors(t *testing.T)
 			provider := newTestProvider(server.URL)
 			provider.zoneName = "example.com"
 			provider.visible[visibleRecordKey("app.example.com", "10.0.0.10")] = visibleRecordMeta{id: "rec-a"}
-			visible := contracts.VisibleRecord{Hostname: "app.example.com", Answer: "10.0.0.10", Provenance: &contracts.RecordProvenance{RemoteID: "rec-a"}}
+			visible := contracts.VisibleRecord{Hostname: "app.example.com", Answer: "10.0.0.10", Provenance: &contracts.RecordProvenance{RemoteID: "rec-a", InstallationID: testInstallationID}}
 
 			_, createErr := provider.Create(context.Background(), contracts.DesiredRecord{Hostname: "app.example.com", Answer: "10.0.0.10"})
 			assertTemporaryClassification(t, createErr, tt.wantTemporary, "create cloudflare dns record")
@@ -947,7 +1002,7 @@ func TestCloudflareUpdateAndDeleteUseRemoteProvenanceID(t *testing.T) {
 
 	provider := newTestProvider(server.URL)
 
-	visible := contracts.VisibleRecord{Hostname: "app.example.com", Answer: "10.0.0.10", Provenance: &contracts.RecordProvenance{RemoteID: "rec-a"}}
+	visible := contracts.VisibleRecord{Hostname: "app.example.com", Answer: "10.0.0.10", Provenance: &contracts.RecordProvenance{RemoteID: "rec-a", InstallationID: testInstallationID}}
 	provenance, err := provider.Update(context.Background(), visible, contracts.DesiredRecord{Hostname: "app.example.com", Answer: "origin.internal"})
 	if err != nil {
 		t.Fatalf("Update returned error: %v", err)
@@ -960,7 +1015,7 @@ func TestCloudflareUpdateAndDeleteUseRemoteProvenanceID(t *testing.T) {
 	}
 
 	updateBody := <-requests
-	if updateBody["type"] != "CNAME" || updateBody["content"] != "origin.internal" {
+	if updateBody["type"] != "CNAME" || updateBody["content"] != "origin.internal" || updateBody["comment"] != ownershipCommentPrefix+testInstallationID {
 		t.Fatalf("unexpected update body: %+v", updateBody)
 	}
 	deleteReq := <-requests
@@ -995,6 +1050,18 @@ func TestCloudflareUpdateAndDeleteFailClosedWithoutMatchingRemoteProvenance(t *t
 	if err := provider.Delete(context.Background(), mismatched); err == nil || !strings.Contains(err.Error(), "does not match cached metadata") {
 		t.Fatalf("expected delete to fail closed on mismatched provenance, got %v", err)
 	}
+
+	unmarked := contracts.VisibleRecord{Hostname: "app.example.com", Answer: "10.0.0.10", Provenance: &contracts.RecordProvenance{RemoteID: "rec-cached"}}
+	if err := provider.Delete(context.Background(), unmarked); err == nil || !strings.Contains(err.Error(), "installation marker") {
+		t.Fatalf("expected delete to fail closed without installation marker, got %v", err)
+	}
+	foreign := contracts.VisibleRecord{Hostname: "app.example.com", Answer: "10.0.0.10", Provenance: &contracts.RecordProvenance{RemoteID: "rec-cached", InstallationID: "123e4567-e89b-42d3-a456-426614174001"}}
+	if err := provider.Delete(context.Background(), foreign); err == nil || !strings.Contains(err.Error(), "installation marker") {
+		t.Fatalf("expected delete to fail closed with foreign installation marker, got %v", err)
+	}
+	if _, err := provider.Update(context.Background(), foreign, contracts.DesiredRecord{Hostname: "app.example.com", Answer: "origin.internal"}); err == nil || !strings.Contains(err.Error(), "installation marker") {
+		t.Fatalf("expected update to fail closed with foreign installation marker, got %v", err)
+	}
 }
 
 func TestCloudflareErrorsDoNotLeakAPIKey(t *testing.T) {
@@ -1028,8 +1095,20 @@ func TestCloudflareErrorSanitizationRedactsAuthHeaderFragments(t *testing.T) {
 	}
 }
 
+func TestCloudflareNewRequiresInstallationID(t *testing.T) {
+	t.Parallel()
+
+	provider, err := New(config.OutputConfig{Type: "cloudflare", Name: "primary"}, " ")
+	if provider != nil || err == nil || !strings.Contains(err.Error(), "installation ID is required") {
+		t.Fatalf("expected missing installation ID to fail at setup, provider=%+v err=%v", provider, err)
+	}
+}
+
 func newTestProvider(baseURL string) *Provider {
-	provider := New(config.OutputConfig{Type: "cloudflare", Name: "primary", ZoneID: "zone-123", APIKey: "cf-secret-token"})
+	provider, err := New(config.OutputConfig{Type: "cloudflare", Name: "primary", ZoneID: "zone-123", APIKey: "cf-secret-token"}, testInstallationID)
+	if err != nil {
+		panic(err)
+	}
 	provider.client = cloudflareapi.NewClient(
 		option.WithAPIToken("cf-secret-token"),
 		option.WithBaseURL(baseURL),
@@ -1038,6 +1117,8 @@ func newTestProvider(baseURL string) *Provider {
 	provider.zoneName = "unit.test"
 	return provider
 }
+
+const testInstallationID = "123e4567-e89b-42d3-a456-426614174000"
 
 func TestCloudflareConfigureTunnelSortsIngressAndAppendsCatchAll(t *testing.T) {
 	t.Parallel()
