@@ -13,7 +13,7 @@ services:
       - ${LIVE_TEST_ADGUARD_WORK_DIR:-./adguard/work}:/opt/adguardhome/work
 
   adguard-init:
-    image: curlimages/curl:8.16.0
+    image: curlimages/curl:8.23.0
     restart: "no"
     depends_on:
       - adguardhome
@@ -66,7 +66,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   whoami:
-    image: traefik/whoami:v1.11.0
+    image: traefik/whoami:v1.12.0
     restart: unless-stopped
     labels:
       - proxy.aliases=whoami.test

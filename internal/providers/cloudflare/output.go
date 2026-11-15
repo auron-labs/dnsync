@@ -13,11 +13,11 @@ import (
 
 	"github.com/aaronflorey/dnsync/internal/config"
 	"github.com/aaronflorey/dnsync/internal/contracts"
-	cloudflare "github.com/cloudflare/cloudflare-go/v6"
-	"github.com/cloudflare/cloudflare-go/v6/dns"
-	"github.com/cloudflare/cloudflare-go/v6/option"
-	"github.com/cloudflare/cloudflare-go/v6/zero_trust"
-	"github.com/cloudflare/cloudflare-go/v6/zones"
+	cloudflare "github.com/cloudflare/cloudflare-go/v7"
+	"github.com/cloudflare/cloudflare-go/v7/dns"
+	"github.com/cloudflare/cloudflare-go/v7/option"
+	"github.com/cloudflare/cloudflare-go/v7/zero_trust"
+	"github.com/cloudflare/cloudflare-go/v7/zones"
 )
 
 type Provider struct {

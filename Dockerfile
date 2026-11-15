@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.3 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -9,7 +9,7 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/dnsync ./cmd/dnsync
 
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian13
 
 WORKDIR /
 COPY --from=build /out/dnsync /usr/local/bin/dnsync

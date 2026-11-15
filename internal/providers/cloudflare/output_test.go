@@ -15,8 +15,8 @@ import (
 
 	"github.com/aaronflorey/dnsync/internal/config"
 	"github.com/aaronflorey/dnsync/internal/contracts"
-	cloudflareapi "github.com/cloudflare/cloudflare-go/v6"
-	"github.com/cloudflare/cloudflare-go/v6/option"
+	cloudflareapi "github.com/cloudflare/cloudflare-go/v7"
+	"github.com/cloudflare/cloudflare-go/v7/option"
 )
 
 type stubTimeoutError struct{}
