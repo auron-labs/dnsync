@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v5"
+
 	"github.com/aaronflorey/dnsync/internal/config"
 	"github.com/aaronflorey/dnsync/internal/contracts"
 	"github.com/aaronflorey/dnsync/internal/state"
@@ -92,64 +94,59 @@ func (a *App) Run(ctx context.Context) error {
 
 func (a *App) reconcile(ctx context.Context, reason string) error {
 	a.deps.Logger.Info("starting reconcile", "reason", reason)
-	startedAt := time.Now()
-	delay := a.deps.Retry.InitialInterval
 
-	for attempt := 1; ; attempt++ {
+	attempt := 0
+	_, err := backoff.Retry(ctx, func() (struct{}, error) {
+		attempt++
 		err := a.reconcileOnce(ctx)
 		if err == nil {
-			a.deps.Logger.Info("reconcile completed", "reason", reason)
-			return nil
+			return struct{}{}, nil
 		}
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return struct{}{}, backoff.Permanent(ctx.Err())
 		}
-
-		var sourceErr sourceListError
-		if errors.As(err, &sourceErr) && isTemporaryError(err) {
-			if time.Since(startedAt)+delay > a.deps.Retry.MaxElapsedTime {
-				return err
-			}
-
-			a.deps.Logger.Warn("retrying full reconcile after temporary source read failure", "reason", reason, "source", providerKey(sourceErr.provider), "attempt", attempt, "next_delay", delay, "error", err)
-			if err := sleepContext(ctx, delay); err != nil {
-				return err
-			}
-
-			delay = nextBackoffDelay(delay, a.deps.Retry.MaxInterval)
-			continue
+		if _, _, ok := retryableReconcileFailure(err); !ok {
+			return struct{}{}, backoff.Permanent(err)
 		}
-
-		var outputErr outputListError
-		if errors.As(err, &outputErr) && isTemporaryError(err) {
-			if time.Since(startedAt)+delay > a.deps.Retry.MaxElapsedTime {
-				return err
-			}
-
-			a.deps.Logger.Warn("retrying full reconcile after temporary output read failure", "reason", reason, "output", providerKey(outputErr.provider), "attempt", attempt, "next_delay", delay, "error", err)
-			if err := sleepContext(ctx, delay); err != nil {
-				return err
-			}
-
-			delay = nextBackoffDelay(delay, a.deps.Retry.MaxInterval)
-			continue
-		}
-
-		var mutationErr outputMutationError
-		if !errors.As(err, &mutationErr) || !isTemporaryError(err) {
-			return err
-		}
-		if time.Since(startedAt)+delay > a.deps.Retry.MaxElapsedTime {
-			return err
-		}
-
-		a.deps.Logger.Warn("retrying full reconcile after temporary output write failure", "reason", reason, "output", providerKey(mutationErr.provider), "attempt", attempt, "next_delay", delay, "error", err)
-		if err := sleepContext(ctx, delay); err != nil {
-			return err
-		}
-
-		delay = nextBackoffDelay(delay, a.deps.Retry.MaxInterval)
+		return struct{}{}, err
+	},
+		backoff.WithBackOff(a.deps.Retry.newBackOff()),
+		backoff.WithMaxElapsedTime(a.deps.Retry.MaxElapsedTime),
+		backoff.WithNotify(func(err error, delay time.Duration) {
+			description, provider, _ := retryableReconcileFailure(err)
+			a.deps.Logger.Warn(description, "reason", reason, provider.kind, providerKey(provider.ref), "attempt", attempt, "next_delay", delay, "error", err)
+		}),
+	)
+	if err != nil {
+		return err
 	}
+	a.deps.Logger.Info("reconcile completed", "reason", reason)
+	return nil
+}
+
+type failedProvider struct {
+	kind string
+	ref  contracts.ProviderRef
+}
+
+// retryableReconcileFailure reports whether err is a temporary provider failure that a full reconcile pass may retry.
+func retryableReconcileFailure(err error) (string, failedProvider, bool) {
+	if !isTemporaryError(err) {
+		return "", failedProvider{}, false
+	}
+	var sourceErr sourceListError
+	if errors.As(err, &sourceErr) {
+		return "retrying full reconcile after temporary source read failure", failedProvider{"source", sourceErr.provider}, true
+	}
+	var outputErr outputListError
+	if errors.As(err, &outputErr) {
+		return "retrying full reconcile after temporary output read failure", failedProvider{"output", outputErr.provider}, true
+	}
+	var mutationErr outputMutationError
+	if errors.As(err, &mutationErr) {
+		return "retrying full reconcile after temporary output write failure", failedProvider{"output", mutationErr.provider}, true
+	}
+	return "", failedProvider{}, false
 }
 
 func (a *App) reconcileOnce(ctx context.Context) error {
@@ -311,14 +308,14 @@ func (a *App) runSteadyState(ctx context.Context) error {
 	}
 
 	events := make(chan sourceWatchEvent, len(watchers)+1)
-	reconnectDelays := make(map[int]time.Duration, len(watchers))
+	reconnectBackoffs := make(map[int]*backoff.ExponentialBackOff, len(watchers))
 	reconnectPending := make(map[int]bool, len(watchers))
 	watchHintDebounce := a.deps.WatchHintDebounce
 	var watchHintTimer *time.Timer
 	var watchHintTimerC <-chan time.Time
 	pendingWatchHintCount := 0
 	for i, watchable := range watchers {
-		reconnectDelays[i] = a.deps.Retry.InitialInterval
+		reconnectBackoffs[i] = a.deps.Retry.newBackOff()
 		a.startSourceWatch(ctx, i, watchable, events)
 	}
 	if err := a.reconcile(ctx, "watch_startup_handoff"); err != nil {
@@ -345,8 +342,8 @@ func (a *App) runSteadyState(ctx context.Context) error {
 		removalTimerC = removalTimer.C
 	}
 	refreshRemovalTimer()
-	for i := range reconnectDelays {
-		reconnectDelays[i] = a.deps.Retry.InitialInterval
+	for _, reconnectBackoff := range reconnectBackoffs {
+		reconnectBackoff.Reset()
 	}
 
 	for {
@@ -375,7 +372,7 @@ func (a *App) runSteadyState(ctx context.Context) error {
 		case event := <-events:
 			if event.hint {
 				provider := a.sources[event.sourceIndex].Provider()
-				reconnectDelays[event.sourceIndex] = a.deps.Retry.InitialInterval
+				reconnectBackoffs[event.sourceIndex].Reset()
 				if watchHintDebounce <= 0 {
 					logDebug(ctx, a.deps.Logger, "source watch emitted reconcile hint", "source", providerKey(provider), "debounce", watchHintDebounce, "coalesced_hint_count", 1)
 					if err := a.reconcile(ctx, "watch_hint"); err != nil {
@@ -413,7 +410,7 @@ func (a *App) runSteadyState(ctx context.Context) error {
 					return err
 				}
 				refreshRemovalTimer()
-				reconnectDelays[event.sourceIndex] = a.deps.Retry.InitialInterval
+				reconnectBackoffs[event.sourceIndex].Reset()
 				continue
 			}
 
@@ -421,10 +418,9 @@ func (a *App) runSteadyState(ctx context.Context) error {
 			if reconnectPending[event.sourceIndex] {
 				continue
 			}
-			delay := reconnectDelays[event.sourceIndex]
+			delay := reconnectBackoffs[event.sourceIndex].NextBackOff()
 			a.deps.Logger.Warn("source watch disconnected", "source", providerKey(provider), "reconnect_delay", delay, "error", event.err)
 			reconnectPending[event.sourceIndex] = true
-			reconnectDelays[event.sourceIndex] = nextBackoffDelay(delay, a.deps.Retry.MaxInterval)
 			a.scheduleSourceReconnect(ctx, event.sourceIndex, delay, events)
 		}
 	}
@@ -444,8 +440,12 @@ func stopTimer(timer *time.Timer) {
 
 func (a *App) scheduleSourceReconnect(ctx context.Context, sourceIndex int, delay time.Duration, events chan<- sourceWatchEvent) {
 	go func() {
-		if err := sleepContext(ctx, delay); err != nil {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
 			return
+		case <-timer.C:
 		}
 
 		select {
@@ -453,20 +453,6 @@ func (a *App) scheduleSourceReconnect(ctx context.Context, sourceIndex int, dela
 		case <-ctx.Done():
 		}
 	}()
-}
-
-func nextBackoffDelay(delay, maxInterval time.Duration) time.Duration {
-	if delay <= 0 {
-		return 0
-	}
-	if maxInterval > 0 && delay > maxInterval {
-		return maxInterval
-	}
-	next := delay * 2
-	if maxInterval > 0 && next > maxInterval {
-		return maxInterval
-	}
-	return next
 }
 
 func (a *App) startSourceWatch(ctx context.Context, sourceIndex int, source contracts.WatchableSource, events chan<- sourceWatchEvent) {

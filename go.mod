@@ -6,6 +6,7 @@ toolchain go1.27.4
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/cloudflare/cloudflare-go/v7 v7.15.0
 	github.com/containerd/errdefs v1.0.0
 	github.com/moby/moby/api v1.57.0

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v5"
+
 	"github.com/aaronflorey/dnsync/internal/config"
 )
 
@@ -24,6 +26,17 @@ type RetryPolicy struct {
 	InitialInterval time.Duration
 	MaxInterval     time.Duration
 	MaxElapsedTime  time.Duration
+	// RandomizationFactor is the jitter applied to each delay; zero disables jitter.
+	RandomizationFactor float64
+}
+
+func (p RetryPolicy) newBackOff() *backoff.ExponentialBackOff {
+	return &backoff.ExponentialBackOff{
+		InitialInterval:     p.InitialInterval,
+		MaxInterval:         p.MaxInterval,
+		Multiplier:          2,
+		RandomizationFactor: p.RandomizationFactor,
+	}
 }
 
 type RuntimeDeps struct {
@@ -147,6 +160,8 @@ func parseRetryPolicy(cfg config.RetryConfig) (RetryPolicy, error) {
 		InitialInterval: initial,
 		MaxInterval:     maxInterval,
 		MaxElapsedTime:  maxElapsed,
+
+		RandomizationFactor: backoff.DefaultRandomizationFactor,
 	}, nil
 }
 
@@ -182,53 +197,6 @@ func parseRemovalGrace(cfg config.RuntimeConfig) (time.Duration, error) {
 		return 0, errors.New("runtime.removal_grace_period must be zero or greater")
 	}
 	return duration, nil
-}
-
-func retryWithBackoff(ctx context.Context, policy RetryPolicy, operation func(attempt int) error, onRetry func(attempt int, delay time.Duration, err error)) error {
-	startedAt := time.Now()
-	delay := policy.InitialInterval
-
-	for attempt := 1; ; attempt++ {
-		err := operation(attempt)
-		if err == nil {
-			return nil
-		}
-		if isContextCancellationError(err) {
-			return err
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		if time.Since(startedAt)+delay > policy.MaxElapsedTime {
-			return err
-		}
-
-		if onRetry != nil {
-			onRetry(attempt, delay, err)
-		}
-
-		if err := sleepContext(ctx, delay); err != nil {
-			return err
-		}
-
-		delay *= 2
-		if delay > policy.MaxInterval {
-			delay = policy.MaxInterval
-		}
-	}
-}
-
-func sleepContext(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }
 
 func withOperationTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
