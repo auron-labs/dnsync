@@ -30,6 +30,20 @@ Temporary statuses treated as retryable include `408`, `429`, and `5xx` response
 
 AdGuard's rewrite listing has no stable record ID. Stale cleanup therefore relies on the hostname/answer persisted by the daemon and is intentionally destructive for a unique exact match.
 
+## TelltaleDNS output
+
+The TelltaleDNS provider uses the local names API under `/api/v1/records` with a bearer API token.
+
+- List: `GET /api/v1/records`
+- Set a name's records: `PUT /api/v1/records/{name}`
+- Remove a name: `DELETE /api/v1/records/{name}`
+
+`PUT` replaces every API-defined record of a name, so each create, update, or delete reads the name's current records and writes back the full set. Records of types dnsync does not manage (`TXT`, `MX`, `SRV`, `PTR`) on the same name are preserved. Names defined in TelltaleDNS config files are read-only; they appear as visible records, and changes to them fail with `409`.
+
+Answers that parse as IPv4 or IPv6 addresses become `A` or `AAAA` records; anything else becomes a `CNAME`. Created records use TelltaleDNS's default TTL.
+
+Records carry no stable ID, so like AdGuard, stale cleanup relies on the hostname/answer persisted by the daemon and is destructive for a unique exact match. Temporary statuses treated as retryable include `408`, `429`, and `5xx` responses.
+
 ## Cloudflare output
 
 The Cloudflare provider uses an API token and a zone ID.
@@ -46,4 +60,5 @@ This repository's source tree is the best reference for supported behavior:
 
 - `internal/providers/docker/*`
 - `internal/providers/adguard/*`
+- `internal/providers/telltaledns/*`
 - `internal/providers/cloudflare/*`

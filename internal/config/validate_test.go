@@ -152,6 +152,20 @@ func TestValidateRuntimeAndCredentialFields(t *testing.T) {
 			wantErr: "sources[0].exclude_compose_projects[1] must not be empty",
 		},
 		{
+			name: "enabled telltaledns output requires url",
+			mutate: func(cfg *Config) {
+				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "telltaledns", Name: "primary-telltale", APIKey: "tt_id_secret"})
+			},
+			wantErr: "outputs[1].url is required",
+		},
+		{
+			name: "enabled telltaledns output requires exactly one api key source",
+			mutate: func(cfg *Config) {
+				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "telltaledns", Name: "primary-telltale", URL: "http://telltale:8053"})
+			},
+			wantErr: "must set exactly one of api_key or api_key_ref",
+		},
+		{
 			name: "enabled cloudflare output requires zone id",
 			mutate: func(cfg *Config) {
 				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "cloudflare", Name: "primary-cloudflare", APIKey: "secret-token"})

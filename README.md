@@ -4,7 +4,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/auron-labs/dnsync/ci.yaml?branch=main&style=flat-square&label=ci)](https://github.com/auron-labs/dnsync/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/auron-labs/dnsync?display_name=tag&style=flat-square)](https://github.com/auron-labs/dnsync/releases)
 
-`dnsync` is a Go daemon that watches Godoxy-labeled Docker workloads and keeps daemon-owned AdGuard Home and Cloudflare DNS records in sync. An optional label-driven Cloudflare Tunnel lifecycle creates a dedicated remote tunnel and managed `cloudflared` sidecar.
+`dnsync` is a Go daemon that watches Godoxy-labeled Docker workloads and keeps daemon-owned AdGuard Home, TelltaleDNS, and Cloudflare DNS records in sync. An optional label-driven Cloudflare Tunnel lifecycle creates a dedicated remote tunnel and managed `cloudflared` sidecar.
 
 ## Installation
 

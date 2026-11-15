@@ -104,6 +104,16 @@ func Validate(cfg Config) error {
 					return err
 				}
 			}
+		case "telltaledns":
+			if strings.TrimSpace(output.URL) == "" {
+				return fmt.Errorf("outputs[%d].url is required", i)
+			}
+
+			hasAPIKey := strings.TrimSpace(output.APIKey) != ""
+			hasAPIKeyRef := strings.TrimSpace(output.APIKeyRef) != ""
+			if hasAPIKey == hasAPIKeyRef {
+				return fmt.Errorf("outputs[%d] must set exactly one of api_key or api_key_ref", i)
+			}
 		default:
 			if output.Tunnel != nil {
 				return fmt.Errorf("outputs[%d].tunnel is only supported for cloudflare outputs", i)

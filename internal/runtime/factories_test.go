@@ -10,6 +10,7 @@ import (
 	adguardstub "github.com/auron-labs/dnsync/internal/providers/adguardstub"
 	cloudflareprovider "github.com/auron-labs/dnsync/internal/providers/cloudflare"
 	dockerprovider "github.com/auron-labs/dnsync/internal/providers/docker"
+	telltalednsprovider "github.com/auron-labs/dnsync/internal/providers/telltaledns"
 )
 
 func TestFactoryRegistryExtensibility(t *testing.T) {
@@ -86,6 +87,22 @@ func TestFactoryRegistryDefaultAdGuardProviderIsReal(t *testing.T) {
 
 	if _, ok := outputs[0].(*adguardstub.Provider); ok {
 		t.Fatalf("expected non-stub adguard provider, got %T", outputs[0])
+	}
+}
+
+func TestFactoryRegistryBuildsTelltaleDNSOutput(t *testing.T) {
+	t.Parallel()
+
+	cfg := validRuntimeConfig("unix:///var/run/docker.sock")
+	cfg.Outputs = []config.OutputConfig{{Type: "telltaledns", Name: "primary", URL: "http://telltale:8053", APIKey: "tt_id_secret"}}
+
+	outputs, err := NewDefaultFactoryRegistry().BuildOutputs(cfg, Deps{})
+	if err != nil {
+		t.Fatalf("build outputs: %v", err)
+	}
+
+	if _, ok := outputs[0].(*telltalednsprovider.Provider); !ok {
+		t.Fatalf("expected telltaledns provider, got %T", outputs[0])
 	}
 }
 

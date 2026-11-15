@@ -10,6 +10,7 @@ import (
 	adguardprovider "github.com/auron-labs/dnsync/internal/providers/adguard"
 	cloudflareprovider "github.com/auron-labs/dnsync/internal/providers/cloudflare"
 	dockerprovider "github.com/auron-labs/dnsync/internal/providers/docker"
+	telltalednsprovider "github.com/auron-labs/dnsync/internal/providers/telltaledns"
 )
 
 type SourceFactory func(config.SourceConfig, Deps) (contracts.Source, error)
@@ -38,6 +39,9 @@ func NewDefaultFactoryRegistry() *FactoryRegistry {
 	}))
 	mustRegister(registry.RegisterOutput("cloudflare", func(cfg config.OutputConfig, deps Deps) (contracts.Output, error) {
 		return cloudflareprovider.New(cfg, deps.InstallationID)
+	}))
+	mustRegister(registry.RegisterOutput("telltaledns", func(cfg config.OutputConfig, _ Deps) (contracts.Output, error) {
+		return telltalednsprovider.New(cfg), nil
 	}))
 	return registry
 }

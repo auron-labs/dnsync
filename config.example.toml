@@ -18,6 +18,13 @@ url = "http://adguardhome:3000"
 username = "admin"
 password_ref = "ENV:ADGUARD_PASSWORD"
 
+# Optional: TelltaleDNS local names. The token needs the "write" scope.
+# [[outputs]]
+# type = "telltaledns"
+# name = "primary-telltaledns"
+# url = "http://telltale:8053"
+# api_key_ref = "ENV:TELLTALEDNS_API_KEY"
+
 # Optional: enable one dedicated Cloudflare Tunnel output. The source name must
 # match exactly one [[sources]] entry of type "docker".
 # [[outputs]]

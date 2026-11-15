@@ -49,7 +49,7 @@ Startup is strict about unknown TOML keys. Misspelled fields, extra sections, an
 
 | Key | Required | Notes |
 | --- | --- | --- |
-| `type` | yes | Supported values in the default registry: `adguard`, `cloudflare`. |
+| `type` | yes | Supported values in the default registry: `adguard`, `cloudflare`, `telltaledns`. |
 | `name` | yes | Human-readable provider name used in logs and state. |
 | `enabled` | no | Defaults to `true` when omitted. Set `false` to skip the output. |
 
@@ -62,6 +62,15 @@ Required when `type = "adguard"` and enabled:
 - exactly one of `password` or `password_ref`
 
 `password_ref` must use the `ENV:` prefix, for example `ENV:ADGUARD_PASSWORD`.
+
+### TelltaleDNS output
+
+Required when `type = "telltaledns"` and enabled:
+
+- `url`, the TelltaleDNS API base URL, for example `http://telltale:8053`
+- exactly one of `api_key` or `api_key_ref`
+
+The key is a TelltaleDNS API token with the `write` scope (`tt_<id>_<secret>`). `api_key_ref` must use the `ENV:` prefix, for example `ENV:TELLTALEDNS_API_KEY`.
 
 ### Cloudflare output
 
@@ -152,7 +161,7 @@ These values control bounded backoff during reconcile and watch-reconnect recove
 Docker sources interpret these labels:
 
 - `proxy.exclude=true` disables the container.
-- `proxy.dns` controls DNS participation: unset or `true` applies to every configured output, `false` opts the container out of DNS, and a value like `adguard` or `cloudflare` limits the record to that output type.
+- `proxy.dns` controls DNS participation: unset or `true` applies to every configured output, `false` opts the container out of DNS, and a value like `adguard`, `cloudflare`, or `telltaledns` limits the record to that output type.
 - `proxy.aliases` is a comma-separated alias list.
 - `proxy.<alias>.port` defines a named alias.
 - `proxy.#<n>.port` and `proxy.*.port` provide indexed and wildcard ports.

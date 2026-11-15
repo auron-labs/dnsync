@@ -18,6 +18,7 @@
 | `internal/providers/docker` | Docker snapshot and event source. |
 | `internal/providers/adguard` | AdGuard rewrite output. |
 | `internal/providers/cloudflare` | Cloudflare DNS output. |
+| `internal/providers/telltaledns` | TelltaleDNS local names output. |
 | `internal/state` | Persisted ownership snapshot. |
 
 ## Reconciliation model
