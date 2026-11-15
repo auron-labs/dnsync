@@ -1,6 +1,6 @@
-# docker-dns-sync documentation
+# dnsync documentation
 
-`docker-dns-sync` is a small Go daemon that watches your Docker containers,
+`dnsync` is a small Go daemon that watches your Docker containers,
 turns a Godoxy-style label scheme into DNS records, and keeps those records in
 sync with one or more DNS providers. Out of the box it talks to AdGuard Home
 rewrites; Cloudflare DNS and an opt-in Cloudflare Tunnel sidecar are also

@@ -11,15 +11,15 @@ mise install
 ## Common local commands
 
 ```bash
-mise exec -- go build -o bin/docker-dns-sync ./cmd/docker-dns-sync
+mise exec -- go build -o bin/dnsync ./cmd/dnsync
 mise exec -- go vet ./...
 mise exec -- go test ./...
-docker build -t docker-dns-sync .
+docker build -t dnsync .
 ```
 
 ## Repository layout
 
-- `cmd/docker-dns-sync` — CLI entrypoint.
+- `cmd/dnsync` — CLI entrypoint.
 - `internal/config` — config parsing and validation.
 - `internal/providers` — Docker, AdGuard, and Cloudflare integrations.
 - `internal/runtime` — reconciliation orchestration.
@@ -33,7 +33,7 @@ The CI workflow runs:
 - `go vet ./...`
 - `go test ./...`
 - `goreleaser ... check`
-- `docker build -t docker-dns-sync-ci .`
+- `docker build -t dnsync-ci .`
 
 The root `Dockerfile` stays optimized for local `docker build ...` workflows. `Dockerfile.release` is the release-only image definition used by GoReleaser's `dockers_v2` pipeline, which copies prebuilt artifacts from the GoReleaser build context.
 

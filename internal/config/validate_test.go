@@ -304,7 +304,7 @@ func TestValidateCloudflareTunnelConfiguration(t *testing.T) {
 		Name:   "primary-cloudflare",
 		ZoneID: "zone-123",
 		APIKey: "api-token",
-		Tunnel: &TunnelConfig{AccountID: "account-123", Name: "docker-dns-sync", Source: "local-docker"},
+		Tunnel: &TunnelConfig{AccountID: "account-123", Name: "dnsync", Source: "local-docker"},
 	}
 	cfg := validConfig()
 	cfg.Outputs = append(cfg.Outputs, tunnelOutput)
@@ -357,7 +357,7 @@ func validConfig() Config {
 			Type:                   "docker",
 			Name:                   "local-docker",
 			Endpoint:               "unix:///var/run/docker.sock",
-			ExcludeComposeProjects: []string{"docker-dns-sync-live-test"},
+			ExcludeComposeProjects: []string{"dnsync-live-test"},
 		}},
 		Outputs: []OutputConfig{{
 			Type:     "adguard",

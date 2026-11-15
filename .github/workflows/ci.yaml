@@ -38,4 +38,4 @@ jobs:
           args: check
 
       - name: Build release container image
-        run: docker build -t docker-dns-sync-ci .
+        run: docker build -t dnsync-ci .

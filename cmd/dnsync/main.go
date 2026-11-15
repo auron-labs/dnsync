@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
-	"github.com/aaronflorey/docker-dns-sync/internal/runtime"
+	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/runtime"
 )
 
 type appRunner interface {
@@ -35,7 +35,7 @@ func run(args []string) error {
 }
 
 func runWithContext(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("docker-dns-sync", flag.ContinueOnError)
+	fs := flag.NewFlagSet("dnsync", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
 	configPath := fs.String("config", "", "Path to the TOML config file")

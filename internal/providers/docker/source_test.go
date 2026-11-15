@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/contracts"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	mobyclient "github.com/moby/moby/client"
@@ -51,10 +51,10 @@ func TestListDesired(t *testing.T) {
 			name:                    "excludes configured Docker Compose projects",
 			endpoint:                "unix:///var/run/docker.sock",
 			defaultHost:             "192.168.1.50",
-			excludedComposeProjects: []string{" Docker-DNS-Sync-Live-Test "},
+			excludedComposeProjects: []string{" DNSync-Live-Test "},
 			containers: []containertypes.Summary{
 				containerSummary("ctr-test", "/whoami", map[string]string{
-					"com.docker.compose.project": "docker-dns-sync-live-test",
+					"com.docker.compose.project": "dnsync-live-test",
 					"proxy.aliases":              "whoami.test",
 					"proxy.whoami.test.port":     "80",
 				}, "running", "172.18.0.20"),

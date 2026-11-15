@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
-	"github.com/aaronflorey/docker-dns-sync/internal/state"
+	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/state"
 )
 
 var errSourceWatchClosed = errors.New("source watch closed")
@@ -72,7 +72,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.store = store
 	a.setProviders(sources, outputs, deps)
 
-	deps.Logger.Info("starting docker-dns-sync runtime", "sources", len(sources), "outputs", len(outputs), "state_path", resolved.State.Path, "log_level", resolved.Logging.Level)
+	deps.Logger.Info("starting dnsync runtime", "sources", len(sources), "outputs", len(outputs), "state_path", resolved.State.Path, "log_level", resolved.Logging.Level)
 	if err := a.reconcile(ctx, "startup"); err != nil {
 		if errors.Is(err, context.Canceled) {
 			deps.Logger.Info("runtime cancelled", "reason", ctx.Err())

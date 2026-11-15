@@ -9,13 +9,15 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/contracts"
 	cerrdefs "github.com/containerd/errdefs"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 )
 
+// Label keys and the container name prefix identify sidecars created by earlier
+// releases; changing them orphans existing managed sidecars.
 const (
 	sidecarManagedLabel = "com.aaronflorey.docker-dns-sync.managed"
 	sidecarOutputLabel  = "com.aaronflorey.docker-dns-sync.output"

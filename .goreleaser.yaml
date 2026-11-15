@@ -1,11 +1,11 @@
 version: 2
 
-project_name: docker-dns-sync
+project_name: dnsync
 
 builds:
-  - id: docker-dns-sync
-    main: ./cmd/docker-dns-sync
-    binary: docker-dns-sync
+  - id: dnsync
+    main: ./cmd/dnsync
+    binary: dnsync
     env:
       - CGO_ENABLED=0
     goos:
@@ -18,7 +18,7 @@ builds:
 archives:
   - id: release-archives
     ids:
-      - docker-dns-sync
+      - dnsync
     formats:
       - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -26,10 +26,10 @@ archives:
 dockers_v2:
   - id: release-container
     ids:
-      - docker-dns-sync
+      - dnsync
     dockerfile: Dockerfile.release
     images:
-      - "ghcr.io/aaronflorey/docker-dns-sync"
+      - "ghcr.io/aaronflorey/dnsync"
     tags:
       - "{{ .Version }}"
       - "{{ .Major }}.{{ .Minor }}"
@@ -48,24 +48,24 @@ dockers_v2:
       "org.opencontainers.image.version": "{{ .Version }}"
 
 homebrew_casks:
-  - name: docker-dns-sync
+  - name: dnsync
     ids:
       - release-archives
     binaries:
-      - docker-dns-sync
+      - dnsync
     repository:
       owner: aaronflorey
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     url:
-      verified: "github.com/aaronflorey/docker-dns-sync/"
-    homepage: https://github.com/aaronflorey/docker-dns-sync
+      verified: "github.com/aaronflorey/dnsync/"
+    homepage: https://github.com/aaronflorey/dnsync
     description: Sync Godoxy-labeled Docker workloads into AdGuard Home rewrites
     hooks:
       post:
         install: |
           if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/docker-dns-sync"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dnsync"]
           end
 
 checksum:

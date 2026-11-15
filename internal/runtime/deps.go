@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/config"
 )
 
 const (

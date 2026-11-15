@@ -2,16 +2,16 @@
 
 ## Host binary with systemd
 
-`deploy/systemd/docker-dns-sync.service` is the sample unit file.
+`deploy/systemd/dnsync.service` is the sample unit file.
 
 ```bash
-mise exec -- go build -o bin/docker-dns-sync ./cmd/docker-dns-sync
-sudo install -m 0755 bin/docker-dns-sync /usr/local/bin/docker-dns-sync
-sudo install -m 0644 deploy/systemd/docker-dns-sync.service /etc/systemd/system/docker-dns-sync.service
-sudo systemctl daemon-reload && sudo systemctl enable --now docker-dns-sync.service
+mise exec -- go build -o bin/dnsync ./cmd/dnsync
+sudo install -m 0755 bin/dnsync /usr/local/bin/dnsync
+sudo install -m 0644 deploy/systemd/dnsync.service /etc/systemd/system/dnsync.service
+sudo systemctl daemon-reload && sudo systemctl enable --now dnsync.service
 ```
 
-The sample unit reads `/etc/docker-dns-sync/docker-dns-sync.env` and starts the binary with `-config /etc/docker-dns-sync/config.toml`.
+The sample unit reads `/etc/dnsync/dnsync.env` and starts the binary with `-config /etc/dnsync/config.toml`.
 
 ## Container deployment
 
@@ -23,7 +23,7 @@ The sample unit reads `/etc/docker-dns-sync/docker-dns-sync.env` and starts the 
 docker compose up -d
 ```
 
-The image defaults to `ghcr.io/aaronflorey/docker-dns-sync:latest` unless `DOCKER_DNS_SYNC_IMAGE` is set.
+The image defaults to `ghcr.io/aaronflorey/dnsync:latest` unless `DNSYNC_IMAGE` is set.
 
 ### Dockerfile
 

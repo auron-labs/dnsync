@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/contracts"
 )
 
 const SnapshotVersion = 3

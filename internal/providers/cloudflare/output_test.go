@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/contracts"
 	cloudflareapi "github.com/cloudflare/cloudflare-go/v6"
 	"github.com/cloudflare/cloudflare-go/v6/option"
 )

@@ -1,4 +1,4 @@
-name: docker-dns-sync-live-test
+name: dnsync-live-test
 
 services:
   adguardhome:
@@ -46,7 +46,7 @@ services:
           sleep 1
         done
 
-  docker-dns-sync:
+  dnsync:
     build:
       context: ../../..
       dockerfile: Dockerfile
@@ -56,13 +56,13 @@ services:
         condition: service_completed_successfully
     environment:
       ADGUARD_PASSWORD: adguard-test-password
-      LOG_FILE: /var/lib/docker-dns-sync/runtime.log
+      LOG_FILE: /var/lib/dnsync/runtime.log
     command:
       - -config
-      - /etc/docker-dns-sync/config.toml
+      - /etc/dnsync/config.toml
     volumes:
-      - ./config.toml:/etc/docker-dns-sync/config.toml:ro
-      - ${LIVE_TEST_STATE_DIR:-./state}:/var/lib/docker-dns-sync
+      - ./config.toml:/etc/dnsync/config.toml:ro
+      - ${LIVE_TEST_STATE_DIR:-./state}:/var/lib/dnsync
       - /var/run/docker.sock:/var/run/docker.sock
 
   whoami:

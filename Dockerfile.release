@@ -3,7 +3,7 @@ FROM gcr.io/distroless/static-debian12
 WORKDIR /
 
 ARG TARGETPLATFORM
-COPY $TARGETPLATFORM/docker-dns-sync /usr/local/bin/docker-dns-sync
+COPY $TARGETPLATFORM/dnsync /usr/local/bin/dnsync
 
-ENTRYPOINT ["/usr/local/bin/docker-dns-sync"]
-CMD ["-config", "/etc/docker-dns-sync/config.toml"]
+ENTRYPOINT ["/usr/local/bin/dnsync"]
+CMD ["-config", "/etc/dnsync/config.toml"]

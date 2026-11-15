@@ -29,7 +29,7 @@ fi
 
 cd "$REPO_ROOT"
 
-TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/docker-dns-sync-live-test.XXXXXX")
+TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dnsync-live-test.XXXXXX")
 RUNTIME_DIR="$TMP_DIR/runtime"
 OVERRIDE_FILE="$TMP_DIR/compose.override.yaml"
 COMPOSE_LOG="$TMP_DIR/compose.log"
@@ -154,7 +154,7 @@ query_dns() {
 		dig +short @"$ADGUARD_DNS_HOST" -p "$ADGUARD_DNS_PORT" "$hostname" 2>/dev/null | awk 'NF { print; exit }'
 		return 0
 	fi
-	docker run --rm --network docker-dns-sync-live-test_default busybox:1.36 nslookup "$hostname" adguardhome 2>/dev/null | extract_nslookup_answer
+	docker run --rm --network dnsync-live-test_default busybox:1.36 nslookup "$hostname" adguardhome 2>/dev/null | extract_nslookup_answer
 }
 
 dns_matches() {
@@ -177,22 +177,22 @@ wait_for_rewrite() {
 }
 
 copy_container_file() {
-	container_id=$(docker compose -f "$COMPOSE_FILE" ps -q docker-dns-sync)
+	container_id=$(docker compose -f "$COMPOSE_FILE" ps -q dnsync)
 	destination=$2
 	rm -f "$destination"
 	docker cp "$container_id:$1" "$destination" >/dev/null 2>&1
 }
 
 state_has_removal_deadline() {
-	copy_container_file /var/lib/docker-dns-sync/state.json "$STATE_SNAPSHOT_PATH" && grep -q '"remove_after"' "$STATE_SNAPSHOT_PATH"
+	copy_container_file /var/lib/dnsync/state.json "$STATE_SNAPSHOT_PATH" && grep -q '"remove_after"' "$STATE_SNAPSHOT_PATH"
 }
 
 state_has_no_removal_deadline() {
-	copy_container_file /var/lib/docker-dns-sync/state.json "$STATE_SNAPSHOT_PATH" && ! grep -q '"remove_after"' "$STATE_SNAPSHOT_PATH"
+	copy_container_file /var/lib/dnsync/state.json "$STATE_SNAPSHOT_PATH" && ! grep -q '"remove_after"' "$STATE_SNAPSHOT_PATH"
 }
 
 log_file_present() {
-	copy_container_file /var/lib/docker-dns-sync/runtime.log "$LOG_SNAPSHOT_PATH" && test -s "$LOG_SNAPSHOT_PATH"
+	copy_container_file /var/lib/dnsync/runtime.log "$LOG_SNAPSHOT_PATH" && test -s "$LOG_SNAPSHOT_PATH"
 }
 
 adguard_ready() {
@@ -243,8 +243,8 @@ log "verify: creating manual rewrite"
 create_manual_rewrite || fail "failed to create manual rewrite"
 wait_for_rewrite "$MANUAL_DOMAIN" "$MANUAL_ANSWER"
 
-log "verify: restarting docker-dns-sync"
-run_compose restart docker-dns-sync
+log "verify: restarting dnsync"
+run_compose restart dnsync
 
 log "verify: verifying restart recovery preserves rewrites"
 wait_for_rewrite "$MANAGED_DOMAIN" "$MANAGED_ORIGINAL_ANSWER"
@@ -252,7 +252,7 @@ wait_for_dns "$MANAGED_DOMAIN" "$MANAGED_ORIGINAL_ANSWER"
 wait_for_rewrite "$MANUAL_DOMAIN" "$MANUAL_ANSWER"
 
 wait_until 30 1 "dual log file sink was not created" log_file_present
-grep -q 'starting docker-dns-sync runtime' "$LOG_SNAPSHOT_PATH" || fail "log file sink did not contain structured runtime records"
+grep -q 'starting dnsync runtime' "$LOG_SNAPSHOT_PATH" || fail "log file sink did not contain structured runtime records"
 
 log_permissions=$(stat -c '%a' "$LOG_SNAPSHOT_PATH" 2>/dev/null || stat -f '%Lp' "$LOG_SNAPSHOT_PATH")
 [ "$log_permissions" = "600" ] || fail "expected rotated log file mode 600, got $log_permissions"

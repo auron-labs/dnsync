@@ -15,7 +15,7 @@ The Docker provider uses the Moby client with API version negotiation. It reads 
 - If `base_domain` is configured on the source, bare aliases are expanded to FQDNs before reconciliation.
 - `exclude_compose_projects` ignores every container whose standard Compose project label matches a configured project name. Matching is case-insensitive and surrounding whitespace in configuration is ignored.
 
-When labels stop producing a record, stale cleanup normally requires exactly one same-key record with non-empty daemon-owned provenance. For AdGuard, docker-dns-sync instead deletes exactly one visible hostname/answer match from daemon state. This can delete an indistinguishable manual replacement because AdGuard exposes no stable rewrite ID; ambiguous duplicates remain blocked.
+When labels stop producing a record, stale cleanup normally requires exactly one same-key record with non-empty daemon-owned provenance. For AdGuard, dnsync instead deletes exactly one visible hostname/answer match from daemon state. This can delete an indistinguishable manual replacement because AdGuard exposes no stable rewrite ID; ambiguous duplicates remain blocked.
 
 ## AdGuard Home output
 

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
-	adguardprovider "github.com/aaronflorey/docker-dns-sync/internal/providers/adguard"
-	cloudflareprovider "github.com/aaronflorey/docker-dns-sync/internal/providers/cloudflare"
-	dockerprovider "github.com/aaronflorey/docker-dns-sync/internal/providers/docker"
+	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/contracts"
+	adguardprovider "github.com/aaronflorey/dnsync/internal/providers/adguard"
+	cloudflareprovider "github.com/aaronflorey/dnsync/internal/providers/cloudflare"
+	dockerprovider "github.com/aaronflorey/dnsync/internal/providers/docker"
 )
 
 type SourceFactory func(config.SourceConfig, RuntimeDeps) (contracts.Source, error)

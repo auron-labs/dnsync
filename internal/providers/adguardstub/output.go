@@ -3,8 +3,8 @@ package adguardstub
 import (
 	"context"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/contracts"
 )
 
 type Provider struct {

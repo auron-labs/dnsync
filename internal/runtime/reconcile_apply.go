@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
-	"github.com/aaronflorey/docker-dns-sync/internal/state"
+	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/state"
 )
 
 func applyReconcilePlan(ctx context.Context, output contracts.Output, owned state.Snapshot, plan reconcilePlan, now time.Time, persist func(state.Snapshot) error) (state.Snapshot, bool, error) {

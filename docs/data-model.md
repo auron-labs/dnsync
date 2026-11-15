@@ -31,7 +31,7 @@ The persisted snapshot lives at `state.path` and is JSON encoded.
       "output": { "Type": "cloudflare", "Name": "primary-cloudflare" },
       "source": { "Type": "docker", "Name": "local-docker" },
       "account_id": "...",
-      "name": "docker-dns-sync",
+      "name": "dnsync",
       "tunnel_id": "...",
       "sidecar_id": "...",
       "image": "cloudflare/cloudflared:2026.7.3",

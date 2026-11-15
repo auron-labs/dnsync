@@ -11,7 +11,7 @@ username = "admin"
 password_ref = "ENV:ADGUARD_PASSWORD"
 
 [state]
-path = "/var/lib/docker-dns-sync/state.json"
+path = "/var/lib/dnsync/state.json"
 
 [logging]
 level = "debug"

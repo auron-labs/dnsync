@@ -141,7 +141,7 @@ the conflict is gone, then restart the daemon.
 
 ```bash
 mise exec -- go test ./...
-docker compose -f deploy/compose/live-test/compose.yaml logs -f docker-dns-sync
+docker compose -f deploy/compose/live-test/compose.yaml logs -f dnsync
 curl -u admin:adguard-test-password http://127.0.0.1:13000/control/rewrite/list
 ```
 

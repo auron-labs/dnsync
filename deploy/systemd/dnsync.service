@@ -5,16 +5,16 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=docker-dns-sync
-Group=docker-dns-sync
+User=dnsync
+Group=dnsync
 # Uncomment when using a local Docker socket with group-based access.
 # SupplementaryGroups=docker
-EnvironmentFile=-/etc/docker-dns-sync/docker-dns-sync.env
-ExecStart=/usr/local/bin/docker-dns-sync -config /etc/docker-dns-sync/config.toml
+EnvironmentFile=-/etc/dnsync/dnsync.env
+ExecStart=/usr/local/bin/dnsync -config /etc/dnsync/config.toml
 Restart=on-failure
 RestartSec=5s
-WorkingDirectory=/var/lib/docker-dns-sync
-StateDirectory=docker-dns-sync
+WorkingDirectory=/var/lib/dnsync
+StateDirectory=dnsync
 NoNewPrivileges=true
 
 [Install]

@@ -1,13 +1,13 @@
 # Live Test Stack
 
-This stack gives you a local AdGuard Home instance, the `docker-dns-sync` daemon under test, and one labeled sample workload.
+This stack gives you a local AdGuard Home instance, the `dnsync` daemon under test, and one labeled sample workload.
 
 The default config is AdGuard-only so the smoke test can run without any external DNS provider credentials.
 
 ## Services
 
 - `adguardhome` exposes the admin/API UI on `http://127.0.0.1:13000`.
-- `docker-dns-sync` watches the host Docker socket and syncs daemon-owned rewrites into AdGuard.
+- `dnsync` watches the host Docker socket and syncs daemon-owned rewrites into AdGuard.
 - `whoami` is a disposable labeled workload used only to drive managed rewrite creation in AdGuard; it is not published on a host port.
 - `adguard-init` runs once to complete AdGuard's first-install flow automatically.
 

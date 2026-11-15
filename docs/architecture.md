@@ -2,7 +2,7 @@
 
 ## High-level flow
 
-1. `cmd/docker-dns-sync/main.go` parses `-config` and starts the app.
+1. `cmd/dnsync/main.go` parses `-config` and starts the app.
 2. `internal/config` loads TOML, validates it, and resolves `ENV:` secret references.
 3. `internal/runtime` builds source and output providers from the registry.
 4. `internal/state` opens or creates the owned-record snapshot file.
@@ -12,7 +12,7 @@
 
 | Package | Responsibility |
 | --- | --- |
-| `cmd/docker-dns-sync` | CLI entrypoint and signal handling. |
+| `cmd/dnsync` | CLI entrypoint and signal handling. |
 | `internal/config` | TOML model, validation, and secret resolution. |
 | `internal/runtime` | Provider wiring, reconciliation, retries, and watch handling. |
 | `internal/providers/docker` | Docker snapshot and event source. |

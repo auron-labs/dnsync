@@ -1,4 +1,4 @@
-module github.com/aaronflorey/docker-dns-sync
+module github.com/aaronflorey/dnsync
 
 go 1.26
 

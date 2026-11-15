@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/contracts"
 )
 
 func TestAtomicWriteReplacesStateFile(t *testing.T) {
@@ -231,7 +231,7 @@ func TestStoreSaveLoadRoundTripsTunnelStateWithoutToken(t *testing.T) {
 	deadline := time.Date(2026, 8, 1, 5, 10, 0, 0, time.UTC)
 	want := Snapshot{
 		ManagedRecords: []ManagedRecord{{Hostname: "app.example.com", Answer: "tunnel-id.cfargotunnel.com", Proxied: true, RemoveAfter: &deadline}},
-		ManagedTunnels: []ManagedTunnel{{Output: contracts.ProviderRef{Type: "cloudflare", Name: "primary"}, Source: contracts.ProviderRef{Type: "docker", Name: "local"}, AccountID: "account", Name: "docker-dns-sync", TunnelID: "tunnel-id", SidecarID: "container-id", Image: "cloudflare/cloudflared:2026.7.3", Routes: []ManagedTunnelRoute{{Hostname: "app.example.com", Service: "http://10.0.0.2:8080", NetworkIDs: []string{"network-id"}, RemoveAfter: &deadline}}}},
+		ManagedTunnels: []ManagedTunnel{{Output: contracts.ProviderRef{Type: "cloudflare", Name: "primary"}, Source: contracts.ProviderRef{Type: "docker", Name: "local"}, AccountID: "account", Name: "dnsync", TunnelID: "tunnel-id", SidecarID: "container-id", Image: "cloudflare/cloudflared:2026.7.3", Routes: []ManagedTunnelRoute{{Hostname: "app.example.com", Service: "http://10.0.0.2:8080", NetworkIDs: []string{"network-id"}, RemoveAfter: &deadline}}}},
 	}
 	if err := store.Save(want); err != nil {
 		t.Fatalf("Save returned error: %v", err)

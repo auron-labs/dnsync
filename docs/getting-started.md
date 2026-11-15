@@ -42,15 +42,15 @@ sample workload together. See [Verify with the live stack](#verify-with-the-live
 2. Build and install the binary:
 
    ```bash
-   mise exec -- go build -o bin/docker-dns-sync ./cmd/docker-dns-sync
-   sudo install -m 0755 bin/docker-dns-sync /usr/local/bin/docker-dns-sync
+   mise exec -- go build -o bin/dnsync ./cmd/dnsync
+   sudo install -m 0755 bin/dnsync /usr/local/bin/dnsync
    ```
 
 3. Copy a starter config and edit it:
 
    ```bash
-   sudo mkdir -p /etc/docker-dns-sync
-   sudo install -m 0644 testdata/config/example.toml /etc/docker-dns-sync/config.toml
+   sudo mkdir -p /etc/dnsync
+   sudo install -m 0644 testdata/config/example.toml /etc/dnsync/config.toml
    ```
 
    At minimum, change `sources[].host_ip` to the IP your DNS clients should
@@ -60,21 +60,21 @@ sample workload together. See [Verify with the live stack](#verify-with-the-live
 4. Create a writable state directory and an env file:
 
    ```bash
-   sudo mkdir -p /var/lib/docker-dns-sync
-   sudo tee /etc/docker-dns-sync/docker-dns-sync.env >/dev/null <<'EOF'
+   sudo mkdir -p /var/lib/dnsync
+   sudo tee /etc/dnsync/dnsync.env >/dev/null <<'EOF'
    ADGUARD_PASSWORD=replace-me
    EOF
-   sudo chmod 0600 /etc/docker-dns-sync/docker-dns-sync.env
+   sudo chmod 0600 /etc/dnsync/dnsync.env
    ```
 
 5. Install the systemd unit and start the service:
 
    ```bash
-   sudo install -m 0644 deploy/systemd/docker-dns-sync.service \
-     /etc/systemd/system/docker-dns-sync.service
+   sudo install -m 0644 deploy/systemd/dnsync.service \
+     /etc/systemd/system/dnsync.service
    sudo systemctl daemon-reload
-   sudo systemctl enable --now docker-dns-sync.service
-   sudo systemctl status docker-dns-sync.service
+   sudo systemctl enable --now dnsync.service
+   sudo systemctl status dnsync.service
    ```
 
    If you mount `/var/run/docker.sock`, the service user must be able to read
@@ -84,7 +84,7 @@ sample workload together. See [Verify with the live stack](#verify-with-the-live
 6. Confirm the daemon started cleanly:
 
    ```bash
-   sudo journalctl -u docker-dns-sync.service -n 50 --no-pager
+   sudo journalctl -u dnsync.service -n 50 --no-pager
    ```
 
    You should see a `reconcile completed` line with no error after it.
@@ -115,13 +115,13 @@ shortest path to a working container deployment.
 
    ```bash
    docker compose up -d
-   docker compose logs -f docker-dns-sync
+   docker compose logs -f dnsync
    ```
 
 4. Confirm a reconcile happened and exited cleanly:
 
    ```bash
-   docker compose logs docker-dns-sync | grep "reconcile completed"
+   docker compose logs dnsync | grep "reconcile completed"
    ```
 
    A clean start logs `reconcile completed` once on startup, then keeps
@@ -133,16 +133,16 @@ Use this when you want every flag visible at the command line and you are not
 using Compose for the daemon itself.
 
 ```bash
-docker pull ghcr.io/aaronflorey/docker-dns-sync:latest
+docker pull ghcr.io/aaronflorey/dnsync:latest
 docker run -d \
-  --name docker-dns-sync \
+  --name dnsync \
   --restart unless-stopped \
   -e ADGUARD_PASSWORD=replace-me \
-  -v /opt/docker-dns-sync/config.toml:/etc/docker-dns-sync/config.toml:ro \
-  -v /opt/docker-dns-sync/state:/var/lib/docker-dns-sync \
+  -v /opt/dnsync/config.toml:/etc/dnsync/config.toml:ro \
+  -v /opt/dnsync/state:/var/lib/dnsync \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/aaronflorey/docker-dns-sync:latest \
-  -config /etc/docker-dns-sync/config.toml
+  ghcr.io/aaronflorey/dnsync:latest \
+  -config /etc/dnsync/config.toml
 ```
 
 The image runs as root on purpose so the documented `/var/run/docker.sock`

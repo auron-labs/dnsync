@@ -1,17 +1,17 @@
-# docker-dns-sync
+# dnsync
 
-[![License](https://img.shields.io/github/license/aaronflorey/docker-dns-sync?style=flat-square)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/aaronflorey/docker-dns-sync/ci.yaml?branch=main&style=flat-square&label=ci)](https://github.com/aaronflorey/docker-dns-sync/actions/workflows/ci.yaml)
-[![Release](https://img.shields.io/github/v/release/aaronflorey/docker-dns-sync?display_name=tag&style=flat-square)](https://github.com/aaronflorey/docker-dns-sync/releases)
+[![License](https://img.shields.io/github/license/aaronflorey/dnsync?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/aaronflorey/dnsync/ci.yaml?branch=main&style=flat-square&label=ci)](https://github.com/aaronflorey/dnsync/actions/workflows/ci.yaml)
+[![Release](https://img.shields.io/github/v/release/aaronflorey/dnsync?display_name=tag&style=flat-square)](https://github.com/aaronflorey/dnsync/releases)
 
-`docker-dns-sync` is a Go daemon that watches Godoxy-labeled Docker workloads and keeps daemon-owned AdGuard Home and Cloudflare DNS records in sync. An optional label-driven Cloudflare Tunnel lifecycle creates a dedicated remote tunnel and managed `cloudflared` sidecar.
+`dnsync` is a Go daemon that watches Godoxy-labeled Docker workloads and keeps daemon-owned AdGuard Home and Cloudflare DNS records in sync. An optional label-driven Cloudflare Tunnel lifecycle creates a dedicated remote tunnel and managed `cloudflared` sidecar.
 
 ## Installation
 
-- Install from Homebrew with `brew install --cask aaronflorey/tap/docker-dns-sync`.
-- Download the latest release archive for your platform from GitHub Releases and place `docker-dns-sync` on your `PATH`.
-- Build from source with `mise install && mise exec -- go build -o bin/docker-dns-sync ./cmd/docker-dns-sync`.
-- Pull the release container image from `ghcr.io/aaronflorey/docker-dns-sync:<tag>`.
+- Install from Homebrew with `brew install --cask aaronflorey/tap/dnsync`.
+- Download the latest release archive for your platform from GitHub Releases and place `dnsync` on your `PATH`.
+- Build from source with `mise install && mise exec -- go build -o bin/dnsync ./cmd/dnsync`.
+- Pull the release container image from `ghcr.io/aaronflorey/dnsync:<tag>`.
 
 ## What It Does
 
@@ -27,7 +27,7 @@
 The binary contract is:
 
 ```text
-docker-dns-sync -config /etc/docker-dns-sync/config.toml
+dnsync -config /etc/dnsync/config.toml
 ```
 
 Start from `testdata/config/example.toml` for a host-binary deployment with a local Docker socket, `config.example.toml` or `testdata/config/docker-container.toml` for a Docker container deployment that mounts `/var/run/docker.sock`, or `testdata/config/socket-proxy.toml` for a TCP proxy or remote Docker source.
@@ -77,12 +77,12 @@ connector sidecar. Never grant or document real tokens inline.
 
 ## Host Binary With systemd
 
-1. Build the binary with `mise exec -- go build -o bin/docker-dns-sync ./cmd/docker-dns-sync`.
-2. Install the binary to `/usr/local/bin/docker-dns-sync`.
-3. Copy `testdata/config/example.toml` to `/etc/docker-dns-sync/config.toml` for a local Docker socket source, or start from `testdata/config/socket-proxy.toml` if Docker is reachable through a proxy or remote endpoint. Keep a writable state path such as `/var/lib/docker-dns-sync/state.json`.
-4. Create an environment file at `/etc/docker-dns-sync/docker-dns-sync.env` with `ADGUARD_PASSWORD=...`.
-5. Install `deploy/systemd/docker-dns-sync.service` to `/etc/systemd/system/docker-dns-sync.service`.
-6. Run `sudo systemctl daemon-reload && sudo systemctl enable --now docker-dns-sync.service`.
+1. Build the binary with `mise exec -- go build -o bin/dnsync ./cmd/dnsync`.
+2. Install the binary to `/usr/local/bin/dnsync`.
+3. Copy `testdata/config/example.toml` to `/etc/dnsync/config.toml` for a local Docker socket source, or start from `testdata/config/socket-proxy.toml` if Docker is reachable through a proxy or remote endpoint. Keep a writable state path such as `/var/lib/dnsync/state.json`.
+4. Create an environment file at `/etc/dnsync/dnsync.env` with `ADGUARD_PASSWORD=...`.
+5. Install `deploy/systemd/dnsync.service` to `/etc/systemd/system/dnsync.service`.
+6. Run `sudo systemctl daemon-reload && sudo systemctl enable --now dnsync.service`.
 
 Notes:
 
@@ -93,22 +93,22 @@ Notes:
 
 ## Docker Deployment
 
-1. Pull a release image with `docker pull ghcr.io/aaronflorey/docker-dns-sync:<tag>`, or build locally with `docker build -t docker-dns-sync .`.
+1. Pull a release image with `docker pull ghcr.io/aaronflorey/dnsync:<tag>`, or build locally with `docker build -t dnsync .`.
 2. Use the root `docker-compose.yaml` plus `config.example.toml` for the simplest container deployment, or start from `testdata/config/docker-container.toml` / `testdata/config/socket-proxy.toml` for a custom deployment.
-3. Create a writable host directory for state such as `/opt/docker-dns-sync/state`.
+3. Create a writable host directory for state such as `/opt/dnsync/state`.
 4. Provide the AdGuard password through an environment variable.
 5. Run the container:
 
 ```bash
 docker run -d \
-  --name docker-dns-sync \
+  --name dnsync \
   --restart unless-stopped \
   -e ADGUARD_PASSWORD=replace-me \
-  -v /opt/docker-dns-sync/config.toml:/etc/docker-dns-sync/config.toml:ro \
-  -v /opt/docker-dns-sync/state:/var/lib/docker-dns-sync \
+  -v /opt/dnsync/config.toml:/etc/dnsync/config.toml:ro \
+  -v /opt/dnsync/state:/var/lib/dnsync \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/aaronflorey/docker-dns-sync:<tag> \
-  -config /etc/docker-dns-sync/config.toml
+  ghcr.io/aaronflorey/dnsync:<tag> \
+  -config /etc/dnsync/config.toml
 ```
 
 Notes:
@@ -128,7 +128,7 @@ Notes:
 - `docker-compose.yaml` - root-level container deployment example.
 - `testdata/config/docker-container.toml` - env-ref based Docker container config for `/var/run/docker.sock` plus network-reachable AdGuard.
 - `testdata/config/socket-proxy.toml` - env-ref based TCP proxy or remote Docker example config.
-- `deploy/systemd/docker-dns-sync.service` - starting point for host deployment.
+- `deploy/systemd/dnsync.service` - starting point for host deployment.
 - `Dockerfile` - local container build for Docker deployment.
 - `Dockerfile.release` - GoReleaser container build for published multi-arch images.
 

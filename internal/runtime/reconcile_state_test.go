@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
-	"github.com/aaronflorey/docker-dns-sync/internal/state"
+	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/state"
 )
 
 func TestPersistedManagedRecords(t *testing.T) {

@@ -5,10 +5,10 @@
 The daemon requires a config file path:
 
 ```bash
-docker-dns-sync -config /path/to/config.toml
+dnsync -config /path/to/config.toml
 ```
 
-`cmd/docker-dns-sync/main.go` rejects startup if `-config` is missing.
+`cmd/dnsync/main.go` rejects startup if `-config` is missing.
 
 ## Config file structure
 
@@ -40,7 +40,7 @@ Startup is strict about unknown TOML keys. Misspelled fields, extra sections, an
 
 - `host_ip` is the preferred default answer target.
 - `base_domain` makes derived hostnames canonical FQDNs before they reach any output.
-- `exclude_compose_projects = ["docker-dns-sync-live-test"]` prevents a production source on the same Docker daemon from discovering the repository's live-test workload.
+- `exclude_compose_projects = ["dnsync-live-test"]` prevents a production source on the same Docker daemon from discovering the repository's live-test workload.
 - If `host_ip` is empty and the endpoint is remote, the endpoint host is used as the default answer target.
 - If the endpoint is a local socket (`unix://`), no default answer target is inferred.
 - The source watches Docker container and network events and uses them as reconciliation hints.
@@ -87,7 +87,7 @@ api_key_ref = "ENV:CLOUDFLARE_API_KEY"
 
 [outputs.tunnel]
 account_id = "..."
-name = "docker-dns-sync"
+name = "dnsync"
 source = "local-docker"
 connector_image = "cloudflare/cloudflared:2026.7.3"
 ```

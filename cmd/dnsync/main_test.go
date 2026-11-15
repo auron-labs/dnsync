@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
-	"github.com/aaronflorey/docker-dns-sync/internal/runtime"
+	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/runtime"
 )
 
 func TestRunWithMinimalConfig(t *testing.T) {

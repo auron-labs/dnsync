@@ -7,12 +7,12 @@ COPY . .
 
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/docker-dns-sync ./cmd/docker-dns-sync
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /out/dnsync ./cmd/dnsync
 
 FROM gcr.io/distroless/static-debian12
 
 WORKDIR /
-COPY --from=build /out/docker-dns-sync /usr/local/bin/docker-dns-sync
+COPY --from=build /out/dnsync /usr/local/bin/dnsync
 
-ENTRYPOINT ["/usr/local/bin/docker-dns-sync"]
-CMD ["-config", "/etc/docker-dns-sync/config.toml"]
+ENTRYPOINT ["/usr/local/bin/dnsync"]
+CMD ["-config", "/etc/dnsync/config.toml"]

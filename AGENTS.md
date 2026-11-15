@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-`docker-dns-sync` is a Go daemon. The CLI entrypoint is `cmd/docker-dns-sync`; runtime code lives under `internal/` and reconciles Docker-derived desired DNS records into output providers while preserving operator-managed records.
+`dnsync` is a Go daemon. The CLI entrypoint is `cmd/dnsync`; runtime code lives under `internal/` and reconciles Docker-derived desired DNS records into output providers while preserving operator-managed records.
 
 ## Source Of Truth
 
@@ -23,10 +23,10 @@
 | Run one test | `mise exec -- go test ./internal/runtime -run TestName` | Focused debugging |
 | Static checks | `mise exec -- go vet ./...` | Matches CI before handoff |
 | Format Go files | `mise exec -- gofmt -w <files>` | After editing Go |
-| Build binary | `mise exec -- go build -o bin/docker-dns-sync ./cmd/docker-dns-sync` | CLI or release-impacting changes |
+| Build binary | `mise exec -- go build -o bin/dnsync ./cmd/dnsync` | CLI or release-impacting changes |
 | Live smoke test | `mise run live-test` | Docker/AdGuard/reconcile integration changes |
 | Keep live stack | `mise run live-test -- --keep-running` | Only when inspecting the live harness |
-| CI container build | `docker build -t docker-dns-sync-ci .` | Dockerfile/runtime image changes |
+| CI container build | `docker build -t dnsync-ci .` | Dockerfile/runtime image changes |
 
 CI also runs GoReleaser config validation via `goreleaser check`; run it locally only if GoReleaser v2 is installed.
 

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aaronflorey/docker-dns-sync/internal/config"
-	"github.com/aaronflorey/docker-dns-sync/internal/contracts"
+	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/aaronflorey/dnsync/internal/contracts"
 	cloudflare "github.com/cloudflare/cloudflare-go/v6"
 	"github.com/cloudflare/cloudflare-go/v6/dns"
 	"github.com/cloudflare/cloudflare-go/v6/option"
@@ -35,6 +35,7 @@ type visibleRecordMeta struct {
 	id string
 }
 
+// Persisted on remote records; changing it orphans ownership of existing records.
 const ownershipCommentPrefix = "docker-dns-sync:managed-by="
 
 type temporaryError struct {

@@ -27,7 +27,7 @@ password_ref = "ENV:ADGUARD_PASSWORD"
 
 [state]
 # This path must stay writable by the deployed process.
-path = "/var/lib/docker-dns-sync/state.json"
+path = "/var/lib/dnsync/state.json"
 
 [logging]
 level = "info"

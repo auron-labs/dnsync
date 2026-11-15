@@ -4,7 +4,7 @@ name = "local-docker"
 # Root docker-compose example using the mounted Docker socket.
 endpoint = "unix:///var/run/docker.sock"
 # Ignore containers started by Compose projects that share this Docker daemon.
-exclude_compose_projects = ["docker-dns-sync-live-test"]
+exclude_compose_projects = ["dnsync-live-test"]
 # Append this suffix to label-derived hostnames like "foo" -> "foo.bar.bz".
 base_domain = "bar.bz"
 # Set the host-reachable IP that derived DNS records should answer with.
@@ -27,13 +27,13 @@ password_ref = "ENV:ADGUARD_PASSWORD"
 # api_key_ref = "ENV:CLOUDFLARE_API_KEY"
 # [outputs.tunnel]
 # account_id = "..."
-# name = "docker-dns-sync"
+# name = "dnsync"
 # source = "local-docker"
 # connector_image = "cloudflare/cloudflared:2026.7.3"
 
 [state]
 # The compose file mounts ./state here for persistence across restarts.
-path = "/var/lib/docker-dns-sync/state.json"
+path = "/var/lib/dnsync/state.json"
 
 [logging]
 # Supported levels: trace, debug, info, warn, error.
