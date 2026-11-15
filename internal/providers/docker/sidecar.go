@@ -57,7 +57,7 @@ func (c mobyTunnelSidecarClient) ImageExists(ctx context.Context, image string) 
 	if cerrdefs.IsNotFound(err) {
 		return false, nil
 	}
-	return false, err
+	return false, fmt.Errorf("inspect image %s: %w", image, err)
 }
 
 type mobyTunnelSidecarClient struct {
@@ -70,7 +70,7 @@ func (c mobyTunnelSidecarClient) InspectContainer(ctx context.Context, name stri
 		if cerrdefs.IsNotFound(err) {
 			return tunnelSidecarContainer{}, errSidecarNotFound
 		}
-		return tunnelSidecarContainer{}, err
+		return tunnelSidecarContainer{}, fmt.Errorf("inspect container %s: %w", name, err)
 	}
 	container := result.Container
 	item := tunnelSidecarContainer{ID: container.ID, Name: strings.TrimPrefix(container.Name, "/")}
@@ -114,35 +114,53 @@ func (c mobyTunnelSidecarClient) InspectContainer(ctx context.Context, name stri
 func (c mobyTunnelSidecarClient) PullImage(ctx context.Context, image string) error {
 	response, err := c.client.ImagePull(ctx, image, mobyclient.ImagePullOptions{})
 	if err != nil {
-		return err
+		return fmt.Errorf("pull image %s: %w", image, err)
 	}
-	defer response.Close()
-	return response.Wait(ctx)
+	defer func() { _ = response.Close() }()
+	if err := response.Wait(ctx); err != nil {
+		return fmt.Errorf("wait for image pull %s: %w", image, err)
+	}
+	return nil
 }
 
 func (c mobyTunnelSidecarClient) CreateContainer(ctx context.Context, name string, cfg *containertypes.Config, hostCfg *containertypes.HostConfig) (string, error) {
 	result, err := c.client.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{Name: name, Config: cfg, HostConfig: hostCfg})
-	return result.ID, err
+	if err != nil {
+		return "", fmt.Errorf("create container %s: %w", name, err)
+	}
+	return result.ID, nil
 }
 
 func (c mobyTunnelSidecarClient) StartContainer(ctx context.Context, id string) error {
 	_, err := c.client.ContainerStart(ctx, id, mobyclient.ContainerStartOptions{})
-	return err
+	if err != nil {
+		return fmt.Errorf("start container %s: %w", id, err)
+	}
+	return nil
 }
 
 func (c mobyTunnelSidecarClient) RemoveContainer(ctx context.Context, id string) error {
 	_, err := c.client.ContainerRemove(ctx, id, mobyclient.ContainerRemoveOptions{Force: true})
-	return err
+	if err != nil {
+		return fmt.Errorf("remove container %s: %w", id, err)
+	}
+	return nil
 }
 
 func (c mobyTunnelSidecarClient) ConnectNetwork(ctx context.Context, networkID, containerID string) error {
 	_, err := c.client.NetworkConnect(ctx, networkID, mobyclient.NetworkConnectOptions{Container: containerID, EndpointConfig: &network.EndpointSettings{}})
-	return err
+	if err != nil {
+		return fmt.Errorf("connect container %s to network %s: %w", containerID, networkID, err)
+	}
+	return nil
 }
 
 func (c mobyTunnelSidecarClient) DisconnectNetwork(ctx context.Context, networkID, containerID string) error {
 	_, err := c.client.NetworkDisconnect(ctx, networkID, mobyclient.NetworkDisconnectOptions{Container: containerID, Force: true})
-	return err
+	if err != nil {
+		return fmt.Errorf("disconnect container %s from network %s: %w", containerID, networkID, err)
+	}
+	return nil
 }
 
 func (p *Provider) EnsureTunnelSidecar(ctx context.Context, spec contracts.TunnelSidecarSpec) (string, error) {

@@ -68,7 +68,7 @@ func runWithContext(ctx context.Context, args []string) error {
 
 	configPath := fs.String("config", "", "Path to the TOML config file")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return fmt.Errorf("parse flags: %w", err)
 	}
 
 	if *configPath == "" {
@@ -77,9 +77,12 @@ func runWithContext(ctx context.Context, args []string) error {
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	app := newApp(cfg)
-	return app.Run(ctx)
+	if err := app.Run(ctx); err != nil {
+		return fmt.Errorf("run daemon: %w", err)
+	}
+	return nil
 }

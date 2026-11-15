@@ -1020,7 +1020,7 @@ func TestCloudflareUpdateAndDeleteUseRemoteProvenanceID(t *testing.T) {
 func TestCloudflareUpdateAndDeleteFailClosedWithoutMatchingRemoteProvenance(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		t.Fatalf("unexpected Cloudflare mutation request: %s %s", r.Method, r.URL.Path)
 	}))
 	defer server.Close()
@@ -1060,7 +1060,7 @@ func TestCloudflareUpdateAndDeleteFailClosedWithoutMatchingRemoteProvenance(t *t
 func TestCloudflareErrorsDoNotLeakAPIKey(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -1339,7 +1339,7 @@ func decodeBody(t *testing.T, r *http.Request) map[string]any {
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	if len(body) == 0 {
 		return map[string]any{}

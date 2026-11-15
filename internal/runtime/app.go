@@ -21,8 +21,8 @@ var errSourceWatchClosed = errors.New("source watch closed")
 type App struct {
 	cfg      config.Config
 	registry *FactoryRegistry
-	newDeps  func(config.Config) (RuntimeDeps, error)
-	deps     RuntimeDeps
+	newDeps  func(config.Config) (Deps, error)
+	deps     Deps
 	store    *state.Store
 	sources  []contracts.Source
 	outputs  []contracts.Output
@@ -32,18 +32,18 @@ func New(cfg config.Config) *App {
 	return &App{
 		cfg:      cfg,
 		registry: NewDefaultFactoryRegistry(),
-		newDeps:  NewRuntimeDeps,
+		newDeps:  NewDeps,
 	}
 }
 
 func (a *App) Run(ctx context.Context) error {
 	if err := config.Validate(a.cfg); err != nil {
-		return err
+		return fmt.Errorf("validate config: %w", err)
 	}
 
 	resolved, err := config.ResolveSecrets(a.cfg, os.LookupEnv)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolve secrets: %w", err)
 	}
 
 	deps, err := a.newDeps(resolved)
@@ -51,12 +51,12 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 	if deps.LogCloser != nil {
-		defer deps.LogCloser.Close()
+		defer func() { _ = deps.LogCloser.Close() }()
 	}
 
 	store, err := state.NewStore(resolved.State.Path)
 	if err != nil {
-		return err
+		return fmt.Errorf("open state store: %w", err)
 	}
 	owned, err := store.Load()
 	if err != nil {
@@ -118,7 +118,7 @@ func (a *App) reconcile(ctx context.Context, reason string) error {
 		}),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("reconcile %s: %w", reason, err)
 	}
 	a.deps.Logger.Info("reconcile completed", "reason", reason)
 	return nil
@@ -259,7 +259,6 @@ type sourceWatchEvent struct {
 	err         error
 	hint        bool
 	reconnect   bool
-	deadline    bool
 }
 
 type sourceListError struct {
@@ -520,7 +519,7 @@ type timeoutOutput struct {
 	timeout time.Duration
 }
 
-func wrapSources(sources []contracts.Source, deps RuntimeDeps) []contracts.Source {
+func wrapSources(sources []contracts.Source, deps Deps) []contracts.Source {
 	wrapped := make([]contracts.Source, 0, len(sources))
 	for _, source := range sources {
 		wrappedSource := timeoutSource{base: source, timeout: deps.OperationTimeout}
@@ -534,7 +533,7 @@ func wrapSources(sources []contracts.Source, deps RuntimeDeps) []contracts.Sourc
 	return wrapped
 }
 
-func wrapOutputs(outputs []contracts.Output, deps RuntimeDeps) []contracts.Output {
+func wrapOutputs(outputs []contracts.Output, deps Deps) []contracts.Output {
 	wrapped := make([]contracts.Output, 0, len(outputs))
 	for _, output := range outputs {
 		wrapped = append(wrapped, loggingOutput{base: timeoutOutput{base: output, timeout: deps.OperationTimeout}, logger: deps.Logger})
@@ -542,7 +541,7 @@ func wrapOutputs(outputs []contracts.Output, deps RuntimeDeps) []contracts.Outpu
 	return wrapped
 }
 
-func (a *App) setProviders(sources []contracts.Source, outputs []contracts.Output, deps RuntimeDeps) {
+func (a *App) setProviders(sources []contracts.Source, outputs []contracts.Output, deps Deps) {
 	a.sources = wrapSources(sources, deps)
 	a.outputs = wrapOutputs(outputs, deps)
 }
@@ -711,7 +710,7 @@ func logTrace(ctx context.Context, logger *slog.Logger, msg string, args ...any)
 	logger.Log(ctx, LevelTrace, msg, args...)
 }
 
-func (a *App) Deps() RuntimeDeps {
+func (a *App) Deps() Deps {
 	return a.deps
 }
 

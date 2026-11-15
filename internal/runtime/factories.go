@@ -12,9 +12,9 @@ import (
 	dockerprovider "github.com/auron-labs/dnsync/internal/providers/docker"
 )
 
-type SourceFactory func(config.SourceConfig, RuntimeDeps) (contracts.Source, error)
+type SourceFactory func(config.SourceConfig, Deps) (contracts.Source, error)
 
-type OutputFactory func(config.OutputConfig, RuntimeDeps) (contracts.Output, error)
+type OutputFactory func(config.OutputConfig, Deps) (contracts.Output, error)
 
 type FactoryRegistry struct {
 	sourceFactories map[string]SourceFactory
@@ -30,13 +30,13 @@ func NewFactoryRegistry() *FactoryRegistry {
 
 func NewDefaultFactoryRegistry() *FactoryRegistry {
 	registry := NewFactoryRegistry()
-	mustRegister(registry.RegisterSource("docker", func(cfg config.SourceConfig, deps RuntimeDeps) (contracts.Source, error) {
+	mustRegister(registry.RegisterSource("docker", func(cfg config.SourceConfig, deps Deps) (contracts.Source, error) {
 		return dockerprovider.New(cfg, deps.Logger)
 	}))
-	mustRegister(registry.RegisterOutput("adguard", func(cfg config.OutputConfig, _ RuntimeDeps) (contracts.Output, error) {
+	mustRegister(registry.RegisterOutput("adguard", func(cfg config.OutputConfig, _ Deps) (contracts.Output, error) {
 		return adguardprovider.New(cfg), nil
 	}))
-	mustRegister(registry.RegisterOutput("cloudflare", func(cfg config.OutputConfig, deps RuntimeDeps) (contracts.Output, error) {
+	mustRegister(registry.RegisterOutput("cloudflare", func(cfg config.OutputConfig, deps Deps) (contracts.Output, error) {
 		return cloudflareprovider.New(cfg, deps.InstallationID)
 	}))
 	return registry
@@ -78,7 +78,7 @@ func (r *FactoryRegistry) RegisterOutput(providerType string, factory OutputFact
 	return nil
 }
 
-func (r *FactoryRegistry) BuildProviders(cfg config.Config, deps RuntimeDeps) ([]contracts.Source, []contracts.Output, error) {
+func (r *FactoryRegistry) BuildProviders(cfg config.Config, deps Deps) ([]contracts.Source, []contracts.Output, error) {
 	sources, err := r.BuildSources(cfg, deps)
 	if err != nil {
 		return nil, nil, err
@@ -92,7 +92,7 @@ func (r *FactoryRegistry) BuildProviders(cfg config.Config, deps RuntimeDeps) ([
 	return sources, outputs, nil
 }
 
-func (r *FactoryRegistry) BuildSources(cfg config.Config, deps RuntimeDeps) ([]contracts.Source, error) {
+func (r *FactoryRegistry) BuildSources(cfg config.Config, deps Deps) ([]contracts.Source, error) {
 	sources := make([]contracts.Source, 0, len(cfg.Sources))
 	for i, sourceCfg := range cfg.Sources {
 		factory, ok := r.sourceFactories[sourceCfg.Type]
@@ -111,7 +111,7 @@ func (r *FactoryRegistry) BuildSources(cfg config.Config, deps RuntimeDeps) ([]c
 	return sources, nil
 }
 
-func (r *FactoryRegistry) BuildOutputs(cfg config.Config, deps RuntimeDeps) ([]contracts.Output, error) {
+func (r *FactoryRegistry) BuildOutputs(cfg config.Config, deps Deps) ([]contracts.Output, error) {
 	outputs := make([]contracts.Output, 0, len(cfg.Outputs))
 	for i, outputCfg := range cfg.Outputs {
 		if !outputCfg.IsEnabled() {

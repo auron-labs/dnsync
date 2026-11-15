@@ -40,7 +40,7 @@ func (p RetryPolicy) newBackOff() *backoff.ExponentialBackOff {
 	}
 }
 
-type RuntimeDeps struct {
+type Deps struct {
 	Logger            *slog.Logger
 	LogLevel          slog.Level
 	InstallationID    string
@@ -51,32 +51,32 @@ type RuntimeDeps struct {
 	LogCloser         io.Closer
 }
 
-func NewRuntimeDeps(cfg config.Config) (RuntimeDeps, error) {
+func NewDeps(cfg config.Config) (Deps, error) {
 	return newRuntimeDeps(cfg, os.Getenv, os.Stdout)
 }
 
-func newRuntimeDeps(cfg config.Config, getenv func(string) string, stdout io.Writer) (RuntimeDeps, error) {
+func newRuntimeDeps(cfg config.Config, getenv func(string) string, stdout io.Writer) (Deps, error) {
 	levelName := cfg.Logging.Level
 	if envLevel := strings.TrimSpace(getenv("LOG_LEVEL")); envLevel != "" {
 		levelName = envLevel
 	}
 	level, err := parseLogLevel(levelName)
 	if err != nil {
-		return RuntimeDeps{}, err
+		return Deps{}, err
 	}
 
 	retry, err := parseRetryPolicy(cfg.Retry)
 	if err != nil {
-		return RuntimeDeps{}, err
+		return Deps{}, err
 	}
 
 	operationTimeout, err := parseOperationTimeout(cfg.Runtime)
 	if err != nil {
-		return RuntimeDeps{}, err
+		return Deps{}, err
 	}
 	removalGrace, err := parseRemovalGrace(cfg.Runtime)
 	if err != nil {
-		return RuntimeDeps{}, err
+		return Deps{}, err
 	}
 
 	handlerOptions := &slog.HandlerOptions{Level: level}
@@ -93,7 +93,7 @@ func newRuntimeDeps(cfg config.Config, getenv func(string) string, stdout io.Wri
 		}
 		rotating, err := newRotatingFile(path, maxBytes, backups)
 		if err != nil {
-			return RuntimeDeps{}, fmt.Errorf("open LOG_FILE: %w", err)
+			return Deps{}, fmt.Errorf("open LOG_FILE: %w", err)
 		}
 		writers = append(writers, rotating)
 		logCloser = rotating
@@ -109,14 +109,14 @@ func newRuntimeDeps(cfg config.Config, getenv func(string) string, stdout io.Wri
 		if logCloser != nil {
 			_ = logCloser.Close()
 		}
-		return RuntimeDeps{}, errors.New("logging.format must be one of json or text")
+		return Deps{}, errors.New("logging.format must be one of json or text")
 	}
 	if hub := sentry.CurrentHub(); sentryEnabled(hub) {
 		handler = slog.NewMultiHandler(handler, sentryHandler{hub: hub})
 	}
 	handler = newRedactingHandler(handler, configSecrets(cfg))
 
-	return RuntimeDeps{
+	return Deps{
 		Logger:            slog.New(handler),
 		LogLevel:          level,
 		OperationTimeout:  operationTimeout,

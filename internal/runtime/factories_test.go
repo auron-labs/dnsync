@@ -16,13 +16,13 @@ func TestFactoryRegistryExtensibility(t *testing.T) {
 	t.Parallel()
 
 	registry := NewFactoryRegistry()
-	if err := registry.RegisterSource("fake-source", func(cfg config.SourceConfig, _ RuntimeDeps) (contracts.Source, error) {
+	if err := registry.RegisterSource("fake-source", func(cfg config.SourceConfig, _ Deps) (contracts.Source, error) {
 		return fakeSource{provider: contracts.ProviderRef{Type: cfg.Type, Name: cfg.Name}}, nil
 	}); err != nil {
 		t.Fatalf("register source: %v", err)
 	}
 
-	if err := registry.RegisterOutput("fake-output", func(cfg config.OutputConfig, _ RuntimeDeps) (contracts.Output, error) {
+	if err := registry.RegisterOutput("fake-output", func(cfg config.OutputConfig, _ Deps) (contracts.Output, error) {
 		return fakeOutput{provider: contracts.ProviderRef{Type: cfg.Type, Name: cfg.Name}}, nil
 	}); err != nil {
 		t.Fatalf("register output: %v", err)
@@ -31,7 +31,7 @@ func TestFactoryRegistryExtensibility(t *testing.T) {
 	sources, outputs, err := registry.BuildProviders(config.Config{
 		Sources: []config.SourceConfig{{Type: "fake-source", Name: "source-a", Endpoint: "unix:///var/run/docker.sock"}},
 		Outputs: []config.OutputConfig{{Type: "fake-output", Name: "output-a", URL: "http://127.0.0.1:3000", Username: "admin", Password: "secret"}},
-	}, RuntimeDeps{})
+	}, Deps{})
 	if err != nil {
 		t.Fatalf("build providers: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestBuildProvidersFromConfig(t *testing.T) {
 	t.Parallel()
 
 	registry := NewDefaultFactoryRegistry()
-	sources, outputs, err := registry.BuildProviders(validRuntimeConfig("unix:///var/run/docker.sock"), RuntimeDeps{})
+	sources, outputs, err := registry.BuildProviders(validRuntimeConfig("unix:///var/run/docker.sock"), Deps{})
 	if err != nil {
 		t.Fatalf("build providers: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestFactoryRegistryDefaultAdGuardProviderIsReal(t *testing.T) {
 	t.Parallel()
 
 	registry := NewDefaultFactoryRegistry()
-	_, outputs, err := registry.BuildProviders(validRuntimeConfig("unix:///var/run/docker.sock"), RuntimeDeps{})
+	_, outputs, err := registry.BuildProviders(validRuntimeConfig("unix:///var/run/docker.sock"), Deps{})
 	if err != nil {
 		t.Fatalf("build providers: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestDockerSourceUsesConfiguredEndpoint(t *testing.T) {
 	registry := NewDefaultFactoryRegistry()
 	for _, endpoint := range []string{"unix:///var/run/docker.sock", "tcp://docker-socket-proxy:2375"} {
 		t.Run(endpoint, func(t *testing.T) {
-			sources, err := registry.BuildSources(validRuntimeConfig(endpoint), RuntimeDeps{})
+			sources, err := registry.BuildSources(validRuntimeConfig(endpoint), Deps{})
 			if err != nil {
 				t.Fatalf("build sources: %v", err)
 			}
@@ -124,7 +124,7 @@ func TestBuildProvidersIncludesCloudflareOutput(t *testing.T) {
 			{Type: "adguard", Name: "primary-adguard", URL: "http://127.0.0.1:3000", Username: "admin", Password: "secret"},
 			{Type: "cloudflare", Name: "primary-cloudflare", ZoneID: "zone-123", APIKey: "token"},
 		},
-	}, RuntimeDeps{InstallationID: "123e4567-e89b-42d3-a456-426614174000"})
+	}, Deps{InstallationID: "123e4567-e89b-42d3-a456-426614174000"})
 	if err != nil {
 		t.Fatalf("build providers: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestBuildOutputsSkipsDisabledOutput(t *testing.T) {
 			{Type: "adguard", Name: "primary-adguard", URL: "http://127.0.0.1:3000", Username: "admin", Password: "secret"},
 			{Type: "unknown-output", Name: "disabled-output", Enabled: boolPtr(false)},
 		},
-	}, RuntimeDeps{})
+	}, Deps{})
 	if err != nil {
 		t.Fatalf("build outputs: %v", err)
 	}

@@ -201,36 +201,6 @@ func portForAlias(labels map[string]string, alias string, index int) string {
 	return normalizePortValue(labels["proxy.*.port"])
 }
 
-func schemeForAlias(labels map[string]string, alias string, index int) string {
-	for _, key := range []string{"proxy." + alias + ".scheme", "proxy." + alias + ".protocol"} {
-		if value := normalizeTunnelScheme(labels[key]); value != "" {
-			return value
-		}
-	}
-	if index > 0 {
-		for _, suffix := range []string{".scheme", ".protocol"} {
-			if value := normalizeTunnelScheme(labels["proxy.#"+itoa(index)+suffix]); value != "" {
-				return value
-			}
-		}
-	}
-	for _, key := range []string{"proxy.*.scheme", "proxy.*.protocol"} {
-		if value := normalizeTunnelScheme(labels[key]); value != "" {
-			return value
-		}
-	}
-	return "http"
-}
-
-func normalizeTunnelScheme(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "http", "https", "tcp", "ssh", "rdp", "smb":
-		return strings.ToLower(strings.TrimSpace(value))
-	default:
-		return ""
-	}
-}
-
 func qualifyHostname(hostname, baseDomain string) string {
 	hostname = normalizeName(hostname)
 	if hostname == "" {

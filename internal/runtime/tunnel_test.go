@@ -175,7 +175,7 @@ func newTunnelLifecycleApp(t *testing.T, output *tunnelLifecycleOutput, source *
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &App{cfg: config.Config{Outputs: []config.OutputConfig{{Type: "cloudflare", Name: "primary", Tunnel: &config.TunnelConfig{AccountID: "account", Name: "main", Source: "local", ConnectorImage: "cloudflared:test"}}}}, store: store, outputs: []contracts.Output{output}, sources: []contracts.Source{source}, deps: RuntimeDeps{RemovalGrace: 0, Logger: slog.New(slog.DiscardHandler)}}
+	app := &App{cfg: config.Config{Outputs: []config.OutputConfig{{Type: "cloudflare", Name: "primary", Tunnel: &config.TunnelConfig{AccountID: "account", Name: "main", Source: "local", ConnectorImage: "cloudflared:test"}}}}, store: store, outputs: []contracts.Output{output}, sources: []contracts.Source{source}, deps: Deps{RemovalGrace: 0, Logger: slog.New(slog.DiscardHandler)}}
 	return app
 }
 

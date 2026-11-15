@@ -34,7 +34,7 @@ type Provider struct {
 }
 
 func New(cfg config.SourceConfig, logger *slog.Logger) (*Provider, error) {
-	cli, err := mobyclient.New(mobyclient.WithHost(cfg.Endpoint), mobyclient.WithAPIVersionNegotiation())
+	cli, err := mobyclient.New(mobyclient.WithHost(cfg.Endpoint))
 	if err != nil {
 		return nil, fmt.Errorf("create docker client: %w", err)
 	}

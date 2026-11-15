@@ -13,7 +13,7 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create state directory: %w", err)
 	}
 	for _, createdDir := range createdDirs {
@@ -90,11 +90,11 @@ func missingDirChain(path string) ([]string, error) {
 }
 
 func syncDir(path string) error {
-	dir, err := os.Open(path)
+	dir, err := os.Open(path) //nolint:gosec // path is a parent of the configured state file
 	if err != nil {
 		return fmt.Errorf("open state directory: %w", err)
 	}
-	defer dir.Close()
+	defer func() { _ = dir.Close() }()
 
 	if err := dir.Sync(); err != nil {
 		return fmt.Errorf("sync state directory: %w", err)

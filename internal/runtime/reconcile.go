@@ -23,7 +23,7 @@ type ReconcileInput struct {
 
 type ReconcileResult struct {
 	Next        state.Snapshot
-	Ambiguities []*ErrVisibleRecordAmbiguous
+	Ambiguities []*VisibleRecordAmbiguousError
 }
 
 type outputMutationError struct {
@@ -112,7 +112,7 @@ func ReconcileAndPersist(ctx context.Context, store *state.Store, input Reconcil
 	}
 
 	if err := store.Save(result.Next); err != nil {
-		return ReconcileResult{}, err
+		return ReconcileResult{}, fmt.Errorf("save state snapshot: %w", err)
 	}
 
 	if input.Logger != nil {

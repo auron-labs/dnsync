@@ -130,6 +130,6 @@ func copyRecordProvenance(provenance *contracts.RecordProvenance) *contracts.Rec
 		return nil
 	}
 
-	copy := *provenance
-	return &copy
+	cloned := *provenance
+	return &cloned
 }

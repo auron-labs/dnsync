@@ -135,7 +135,7 @@ func TestAdGuardDeleteRewriteDelete(t *testing.T) {
 func TestAdGuardErrorsDoNotLeakCredentials(t *testing.T) {
 	t.Parallel()
 
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 	defer testServer.Close()
@@ -154,7 +154,7 @@ func TestAdGuardErrorsDoNotLeakCredentials(t *testing.T) {
 func TestAdGuardCreateMarksTemporaryServerFailuresRetryable(t *testing.T) {
 	t.Parallel()
 
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "backend unavailable", http.StatusServiceUnavailable)
 	}))
 	defer testServer.Close()
@@ -174,7 +174,7 @@ func TestAdGuardCreateMarksTemporaryServerFailuresRetryable(t *testing.T) {
 func TestAdGuardCreateLeavesBadRequestFailuresTerminal(t *testing.T) {
 	t.Parallel()
 
-	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 	}))
 	defer testServer.Close()
@@ -217,7 +217,7 @@ func assertBody(t *testing.T, r *http.Request, want any) {
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var gotValue any
 	if err := json.Unmarshal(body, &gotValue); err != nil {

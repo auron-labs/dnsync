@@ -309,9 +309,9 @@ func TestCloudflareMarkerFlowRejectsAmbiguousDuplicates(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ambiguous marker-owned records to fail closed")
 	}
-	var ambiguityErr *ErrVisibleRecordAmbiguous
+	var ambiguityErr *VisibleRecordAmbiguousError
 	if !errors.As(err, &ambiguityErr) {
-		t.Fatalf("expected ErrVisibleRecordAmbiguous, got %T", err)
+		t.Fatalf("expected VisibleRecordAmbiguousError, got %T", err)
 	}
 	if len(fakeOutput.deleted) != 0 {
 		t.Fatalf("expected no delete for ambiguous marker-owned records, got %d", len(fakeOutput.deleted))

@@ -661,9 +661,9 @@ func TestStaleOwnedDuplicateVisibleRecordsRemainNonDestructive(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ambiguity error for duplicate visible keys")
 	}
-	var ambiguityErr *ErrVisibleRecordAmbiguous
+	var ambiguityErr *VisibleRecordAmbiguousError
 	if !errors.As(err, &ambiguityErr) {
-		t.Fatalf("expected ErrVisibleRecordAmbiguous, got %T", err)
+		t.Fatalf("expected VisibleRecordAmbiguousError, got %T", err)
 	}
 	if got := len(fakeOutput.deleted); got != 0 {
 		t.Fatalf("expected ambiguous stale ownership handling to remain non-destructive, got %d deletes", got)
@@ -713,9 +713,9 @@ func TestPreserveManualRecords(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ambiguity error for duplicate visible keys")
 	}
-	var ambiguityErr *ErrVisibleRecordAmbiguous
+	var ambiguityErr *VisibleRecordAmbiguousError
 	if !errors.As(err, &ambiguityErr) {
-		t.Fatalf("expected ErrVisibleRecordAmbiguous, got %T", err)
+		t.Fatalf("expected VisibleRecordAmbiguousError, got %T", err)
 	}
 	if got := len(fakeOutput.deleted); got != 0 {
 		t.Fatalf("expected non-destructive duplicate handling, got %d deletes", got)

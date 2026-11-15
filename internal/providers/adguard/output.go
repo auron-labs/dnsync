@@ -138,7 +138,7 @@ func (p *Provider) requestJSON(ctx context.Context, method, path string, reqBody
 		}
 		return temporaryError{err: requestErr}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		payload, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))

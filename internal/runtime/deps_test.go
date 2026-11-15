@@ -23,24 +23,24 @@ func TestParseLogLevelSupportsTrace(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeDepsInfoDisablesTrace(t *testing.T) {
+func TestNewDepsInfoDisablesTrace(t *testing.T) {
 	t.Parallel()
 
 	deps, err := newRuntimeDeps(testRuntimeConfig(t.TempDir()), emptyRuntimeEnv, io.Discard)
 	if err != nil {
-		t.Fatalf("NewRuntimeDeps returned error: %v", err)
+		t.Fatalf("NewDeps returned error: %v", err)
 	}
 	if deps.Logger.Enabled(context.Background(), LevelTrace) {
 		t.Fatal("expected info logger to disable trace level")
 	}
 }
 
-func TestNewRuntimeDepsDefaultsOperationTimeout(t *testing.T) {
+func TestNewDepsDefaultsOperationTimeout(t *testing.T) {
 	t.Parallel()
 
 	deps, err := newRuntimeDeps(testRuntimeConfig(t.TempDir()), emptyRuntimeEnv, io.Discard)
 	if err != nil {
-		t.Fatalf("NewRuntimeDeps returned error: %v", err)
+		t.Fatalf("NewDeps returned error: %v", err)
 	}
 
 	if deps.OperationTimeout != defaultOperationTimeout {
@@ -48,7 +48,7 @@ func TestNewRuntimeDepsDefaultsOperationTimeout(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeDepsUsesConfiguredOperationTimeout(t *testing.T) {
+func TestNewDepsUsesConfiguredOperationTimeout(t *testing.T) {
 	t.Parallel()
 
 	cfg := testRuntimeConfig(t.TempDir())
@@ -56,7 +56,7 @@ func TestNewRuntimeDepsUsesConfiguredOperationTimeout(t *testing.T) {
 
 	deps, err := newRuntimeDeps(cfg, emptyRuntimeEnv, io.Discard)
 	if err != nil {
-		t.Fatalf("NewRuntimeDeps returned error: %v", err)
+		t.Fatalf("NewDeps returned error: %v", err)
 	}
 
 	if deps.OperationTimeout != 25*time.Second {
@@ -64,7 +64,7 @@ func TestNewRuntimeDepsUsesConfiguredOperationTimeout(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeDepsLoggingEnvironmentAndRotationDefaults(t *testing.T) {
+func TestNewDepsLoggingEnvironmentAndRotationDefaults(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "logs", "daemon.log")
 	deps, err := newRuntimeDeps(testRuntimeConfig(t.TempDir()), func(key string) string {
@@ -80,7 +80,7 @@ func TestNewRuntimeDepsLoggingEnvironmentAndRotationDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deps.LogCloser.Close()
+	defer func() { _ = deps.LogCloser.Close() }()
 	if deps.LogLevel != slog.LevelDebug {
 		t.Fatalf("LOG_LEVEL did not override config: %v", deps.LogLevel)
 	}
@@ -93,7 +93,7 @@ func TestNewRuntimeDepsLoggingEnvironmentAndRotationDefaults(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeDepsRejectsInvalidEnvironmentLevelAndLogFile(t *testing.T) {
+func TestNewDepsRejectsInvalidEnvironmentLevelAndLogFile(t *testing.T) {
 	t.Parallel()
 	if _, err := newRuntimeDeps(testRuntimeConfig(t.TempDir()), func(key string) string {
 		if key == "LOG_LEVEL" {
@@ -118,7 +118,7 @@ func TestNewRuntimeDepsRejectsInvalidEnvironmentLevelAndLogFile(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeDepsRemovalGraceDefaultsAndAllowsZero(t *testing.T) {
+func TestNewDepsRemovalGraceDefaultsAndAllowsZero(t *testing.T) {
 	t.Parallel()
 	deps, err := newRuntimeDeps(testRuntimeConfig(t.TempDir()), emptyRuntimeEnv, io.Discard)
 	if err != nil {

@@ -17,7 +17,7 @@ type reconcilePlan struct {
 	CreateDrops  map[string]state.ManagedRecord
 	UpdateDrops  map[string]state.ManagedRecord
 	KeepDrops    map[string]state.ManagedRecord
-	Ambiguities  []*ErrVisibleRecordAmbiguous
+	Ambiguities  []*VisibleRecordAmbiguousError
 	Blocked      []state.ManagedRecord
 	NextManaged  []state.ManagedRecord
 	AppliedIndex map[string]state.ManagedRecord
@@ -54,7 +54,7 @@ func buildReconcilePlanAt(output contracts.ProviderRef, desired []contracts.Desi
 
 	for k, records := range visibleByKey {
 		if len(records) > 1 {
-			pl.Ambiguities = append(pl.Ambiguities, &ErrVisibleRecordAmbiguous{Output: output.Type + "/" + output.Name, Key: k, Count: len(records)})
+			pl.Ambiguities = append(pl.Ambiguities, &VisibleRecordAmbiguousError{Output: output.Type + "/" + output.Name, Key: k, Count: len(records)})
 		}
 	}
 
@@ -342,12 +342,12 @@ func sameRecordProvenance(managed, visible *contracts.RecordProvenance) bool {
 
 func nextManagedProvenance(primary, fallback *contracts.RecordProvenance) *contracts.RecordProvenance {
 	if primary != nil {
-		copy := *primary
-		return &copy
+		cloned := *primary
+		return &cloned
 	}
 	if fallback != nil {
-		copy := *fallback
-		return &copy
+		cloned := *fallback
+		return &cloned
 	}
 
 	return nil

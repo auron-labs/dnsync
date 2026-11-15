@@ -57,12 +57,15 @@ func (r *rotatingFile) Write(payload []byte) (int, error) {
 	}
 	if r.size > 0 && r.size+int64(len(payload)) > r.maxBytes {
 		if err := r.rotate(); err != nil {
-			return 0, err
+			return 0, fmt.Errorf("rotate log file: %w", err)
 		}
 	}
 	n, err := r.file.Write(payload)
 	r.size += int64(n)
-	return n, err
+	if err != nil {
+		return n, fmt.Errorf("write log file: %w", err)
+	}
+	return n, nil
 }
 
 func (r *rotatingFile) Close() error {
@@ -73,7 +76,10 @@ func (r *rotatingFile) Close() error {
 	}
 	err := r.file.Close()
 	r.file = nil
-	return err
+	if err != nil {
+		return fmt.Errorf("close log file: %w", err)
+	}
+	return nil
 }
 
 func (r *rotatingFile) open() error {
@@ -140,7 +146,10 @@ func (h redactingHandler) Handle(ctx context.Context, record slog.Record) error 
 		next.AddAttrs(h.redactAttr(attr))
 		return true
 	})
-	return h.next.Handle(ctx, next)
+	if err := h.next.Handle(ctx, next); err != nil {
+		return fmt.Errorf("handle log record: %w", err)
+	}
+	return nil
 }
 
 func (h redactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

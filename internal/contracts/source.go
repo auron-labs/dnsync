@@ -6,14 +6,14 @@ import (
 )
 
 type ProviderRef struct {
-	Type string
-	Name string
+	Type string `json:"Type"`
+	Name string `json:"Name"`
 }
 
 type SourceObjectRef struct {
-	Provider    ProviderRef
-	ID          string
-	DisplayName string
+	Provider    ProviderRef `json:"Provider"`
+	ID          string      `json:"ID"`
+	DisplayName string      `json:"DisplayName"`
 }
 
 type DesiredRecord struct {

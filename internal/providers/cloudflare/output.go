@@ -157,9 +157,8 @@ func (p *Provider) Create(ctx context.Context, desired contracts.DesiredRecord) 
 			return nil, listErr
 		}
 
-		zoneName := ""
 		p.mu.RLock()
-		zoneName = p.zoneName
+		zoneName := p.zoneName
 		p.mu.RUnlock()
 
 		matches := make([]contracts.VisibleRecord, 0, 1)
@@ -688,6 +687,6 @@ func copyProvenance(provenance *contracts.RecordProvenance) *contracts.RecordPro
 		return nil
 	}
 
-	copy := *provenance
-	return &copy
+	cloned := *provenance
+	return &cloned
 }

@@ -30,7 +30,8 @@ type tunnelPhase struct {
 	expiring bool
 }
 
-func (a *App) configuredTunnelBinding() (*tunnelBinding, error) {
+// configuredTunnelBinding reports false when no enabled output configures a tunnel.
+func (a *App) configuredTunnelBinding() (*tunnelBinding, bool, error) {
 	var configured *config.OutputConfig
 	for i := range a.cfg.Outputs {
 		output := &a.cfg.Outputs[i]
@@ -40,7 +41,7 @@ func (a *App) configuredTunnelBinding() (*tunnelBinding, error) {
 		}
 	}
 	if configured == nil {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	outputRef := contracts.ProviderRef{Type: configured.Type, Name: configured.Name}
@@ -52,11 +53,11 @@ func (a *App) configuredTunnelBinding() (*tunnelBinding, error) {
 		}
 	}
 	if output == nil {
-		return nil, fmt.Errorf("configured tunnel output %s is unavailable", providerKey(outputRef))
+		return nil, false, fmt.Errorf("configured tunnel output %s is unavailable", providerKey(outputRef))
 	}
 	tunnelOutput, ok := output.(contracts.TunnelOutput)
 	if !ok {
-		return nil, fmt.Errorf("configured tunnel output %s does not support tunnel control", providerKey(outputRef))
+		return nil, false, fmt.Errorf("configured tunnel output %s does not support tunnel control", providerKey(outputRef))
 	}
 
 	var source contracts.Source
@@ -68,11 +69,11 @@ func (a *App) configuredTunnelBinding() (*tunnelBinding, error) {
 		}
 	}
 	if source == nil {
-		return nil, fmt.Errorf("configured tunnel source %q is unavailable", configured.Tunnel.Source)
+		return nil, false, fmt.Errorf("configured tunnel source %q is unavailable", configured.Tunnel.Source)
 	}
 	sidecars, ok := unwrapTunnelSidecarSource(source)
 	if !ok {
-		return nil, fmt.Errorf("configured tunnel source %s does not support sidecar management", providerKey(source.Provider()))
+		return nil, false, fmt.Errorf("configured tunnel source %s does not support sidecar management", providerKey(source.Provider()))
 	}
 
 	return &tunnelBinding{
@@ -81,7 +82,7 @@ func (a *App) configuredTunnelBinding() (*tunnelBinding, error) {
 		source:       source,
 		sidecars:     sidecars,
 		config:       *configured.Tunnel,
-	}, nil
+	}, true, nil
 }
 
 func unwrapTunnelSidecarSource(source contracts.Source) (contracts.TunnelSidecarSource, bool) {
@@ -98,11 +99,11 @@ func unwrapTunnelSidecarSource(source contracts.Source) (contracts.TunnelSidecar
 }
 
 func (a *App) prepareTunnel(ctx context.Context, owned state.Snapshot, routes []contracts.DesiredTunnelRoute, now time.Time) (state.Snapshot, *tunnelPhase, error) {
-	binding, err := a.configuredTunnelBinding()
+	binding, configured, err := a.configuredTunnelBinding()
 	if err != nil {
 		return owned, nil, err
 	}
-	if binding == nil {
+	if !configured {
 		if len(routes) != 0 {
 			return owned, nil, errors.New("received Cloudflare Tunnel routes without a configured tunnel output")
 		}
@@ -111,18 +112,17 @@ func (a *App) prepareTunnel(ctx context.Context, owned state.Snapshot, routes []
 
 	for _, route := range routes {
 		if !sameProvider(route.Source.Provider, binding.source.Provider()) {
-			return owned, nil, fmt.Errorf("Cloudflare Tunnel route %q came from non-selected source %s", route.Hostname, providerKey(route.Source.Provider))
+			return owned, nil, fmt.Errorf("cloudflare tunnel route %q came from non-selected source %s", route.Hostname, providerKey(route.Source.Provider))
 		}
 	}
 	if err := validateTunnelRouteHostnames(routes); err != nil {
 		return owned, nil, err
 	}
 
-	managed, err := ownedTunnel(owned, binding)
+	managed, existingManaged, err := ownedTunnel(owned, binding)
 	if err != nil {
 		return owned, nil, err
 	}
-	existingManaged := managed != nil
 	routeState, expiring := mergeTunnelRoutes(managed, routes, now, a.deps.RemovalGrace)
 	if managed != nil {
 		if len(routes) > 0 {
@@ -304,7 +304,8 @@ func tunnelSidecarSpec(managed *state.ManagedTunnel, networkIDs []string) contra
 	return contracts.TunnelSidecarSpec{Output: managed.Output, TunnelID: managed.TunnelID, Name: managed.Name, Image: managed.Image, NetworkIDs: networkIDs}
 }
 
-func ownedTunnel(owned state.Snapshot, binding *tunnelBinding) (*state.ManagedTunnel, error) {
+// ownedTunnel reports false when no managed tunnel snapshot matches the binding.
+func ownedTunnel(owned state.Snapshot, binding *tunnelBinding) (*state.ManagedTunnel, bool, error) {
 	var matches []state.ManagedTunnel
 	for _, tunnel := range owned.ManagedTunnels {
 		if sameProvider(tunnel.Output, binding.output.Provider()) && sameProvider(tunnel.Source, binding.source.Provider()) {
@@ -312,19 +313,19 @@ func ownedTunnel(owned state.Snapshot, binding *tunnelBinding) (*state.ManagedTu
 		}
 	}
 	if len(matches) > 1 {
-		return nil, fmt.Errorf("multiple managed tunnel snapshots exist for %s", providerKey(binding.output.Provider()))
+		return nil, false, fmt.Errorf("multiple managed tunnel snapshots exist for %s", providerKey(binding.output.Provider()))
 	}
 	if len(matches) == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	if matches[0].Name != binding.config.Name || matches[0].AccountID != binding.config.AccountID || strings.TrimSpace(matches[0].TunnelID) == "" {
-		return nil, errors.New("managed tunnel state does not match configured output/source identity")
+		return nil, false, errors.New("managed tunnel state does not match configured output/source identity")
 	}
 	result := matches[0]
 	if result.Image == "" {
 		result.Image = binding.config.CloudflaredImage()
 	}
-	return &result, nil
+	return &result, true, nil
 }
 
 func mergeTunnelRoutes(managed *state.ManagedTunnel, desired []contracts.DesiredTunnelRoute, now time.Time, grace time.Duration) ([]state.ManagedTunnelRoute, bool) {

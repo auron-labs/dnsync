@@ -843,9 +843,9 @@ func TestAppReconcileOnceDoesNotDeleteOrPersistAcrossAmbiguousVisibleDuplicates(
 	if err == nil {
 		t.Fatal("expected ambiguity error")
 	}
-	var ambiguityErr *ErrVisibleRecordAmbiguous
+	var ambiguityErr *VisibleRecordAmbiguousError
 	if !errors.As(err, &ambiguityErr) {
-		t.Fatalf("expected ErrVisibleRecordAmbiguous, got %T", err)
+		t.Fatalf("expected VisibleRecordAmbiguousError, got %T", err)
 	}
 	if got := output.deleteCount(); got != 0 {
 		t.Fatalf("expected duplicate visible handling to remain non-destructive, got %d deletes", got)
@@ -918,7 +918,7 @@ func TestAppRunRuntimeReconcilesAfterWatchHint(t *testing.T) {
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
+	app.newDeps = func(config.Config) (Deps, error) {
 		return testRuntimeDeps(RetryPolicy{
 			InitialInterval: 10 * time.Millisecond,
 			MaxInterval:     20 * time.Millisecond,
@@ -963,7 +963,7 @@ func TestAppRunCoalescesWatchHintsWithinDebounceWindow(t *testing.T) {
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
+	app.newDeps = func(config.Config) (Deps, error) {
 		return testRuntimeDeps(RetryPolicy{
 			InitialInterval: 10 * time.Millisecond,
 			MaxInterval:     20 * time.Millisecond,
@@ -1015,7 +1015,7 @@ func TestAppRunReconnectsAfterWatchDisconnect(t *testing.T) {
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
+	app.newDeps = func(config.Config) (Deps, error) {
 		return testRuntimeDeps(RetryPolicy{
 			InitialInterval: 10 * time.Millisecond,
 			MaxInterval:     20 * time.Millisecond,
@@ -1068,7 +1068,7 @@ func TestAppRunRetriesReconnectRepairAfterTransientSourceFailure(t *testing.T) {
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
+	app.newDeps = func(config.Config) (Deps, error) {
 		return testRuntimeDeps(RetryPolicy{
 			InitialInterval: time.Millisecond,
 			MaxInterval:     2 * time.Millisecond,
@@ -1121,7 +1121,7 @@ func TestAppRunRetriesWatchHintReconcileAfterTransientSourceFailure(t *testing.T
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
+	app.newDeps = func(config.Config) (Deps, error) {
 		return testRuntimeDeps(RetryPolicy{
 			InitialInterval: time.Millisecond,
 			MaxInterval:     2 * time.Millisecond,
@@ -1169,8 +1169,8 @@ func TestAppRunRetriesStartupHandoffReconcileAfterTransientSourceFailure(t *test
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
-		return RuntimeDeps{
+	app.newDeps = func(config.Config) (Deps, error) {
+		return Deps{
 			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
@@ -1228,7 +1228,7 @@ func TestAppRunRetriesWatchTriggeredReconcileAfterOtherSourceFailure(t *testing.
 		}},
 	}
 	output := &startupOutputStub{provider: contracts.ProviderRef{Type: "adguard", Name: "primary"}}
-	deps := RuntimeDeps{
+	deps := Deps{
 		Logger:           slog.New(slog.DiscardHandler),
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
@@ -1290,7 +1290,7 @@ func TestAppRunDoesNotRetryWatchHintReconcileAfterMutationFailure(t *testing.T) 
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
+	app.newDeps = func(config.Config) (Deps, error) {
 		return testRuntimeDeps(RetryPolicy{
 			InitialInterval: time.Millisecond,
 			MaxInterval:     2 * time.Millisecond,
@@ -1433,8 +1433,8 @@ func TestAppRunRestartsWatchBeforeReconnectRepairRetries(t *testing.T) {
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
-		return RuntimeDeps{
+	app.newDeps = func(config.Config) (Deps, error) {
+		return Deps{
 			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
@@ -1485,8 +1485,8 @@ func TestAppRunBacksOffRepeatedWatchReconnects(t *testing.T) {
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
-		return RuntimeDeps{
+	app.newDeps = func(config.Config) (Deps, error) {
+		return Deps{
 			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
@@ -1496,8 +1496,8 @@ func TestAppRunBacksOffRepeatedWatchReconnects(t *testing.T) {
 			},
 		}, nil
 	}
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
-		return RuntimeDeps{
+	app.newDeps = func(config.Config) (Deps, error) {
+		return Deps{
 			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
@@ -1563,7 +1563,7 @@ func TestAppRunReconnectBackoffDoesNotBlockOtherWatchHints(t *testing.T) {
 		sessions: []*watchSession{peerSession},
 	}
 	output := &startupOutputStub{provider: contracts.ProviderRef{Type: "adguard", Name: "primary"}}
-	deps := RuntimeDeps{
+	deps := Deps{
 		Logger:           slog.New(slog.DiscardHandler),
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
@@ -1643,8 +1643,8 @@ func TestAppRunResetsReconnectBackoffAfterSuccessfulRepair(t *testing.T) {
 
 	app := New(testRuntimeConfig(filepath.Join(t.TempDir(), "state.json")))
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
-	app.newDeps = func(config.Config) (RuntimeDeps, error) {
-		return RuntimeDeps{
+	app.newDeps = func(config.Config) (Deps, error) {
+		return Deps{
 			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
@@ -1715,7 +1715,7 @@ func TestReconcileRetriesFullPassAfterTransientListVisibleFailure(t *testing.T) 
 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	deps := RuntimeDeps{
+	deps := Deps{
 		Logger:           logger,
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
@@ -1800,7 +1800,7 @@ func TestReconcileRetriesFullPassAfterTransientListDesiredFailure(t *testing.T) 
 
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	deps := RuntimeDeps{
+	deps := Deps{
 		Logger:           logger,
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
@@ -1857,7 +1857,7 @@ func TestReconcileRetriesFullPassAfterTransientCreateFailure(t *testing.T) {
 		t.Fatalf("create store: %v", err)
 	}
 
-	deps := RuntimeDeps{
+	deps := Deps{
 		Logger:           slog.New(slog.DiscardHandler),
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
@@ -1885,7 +1885,7 @@ func TestReconcileRetriesFullPassAfterTransientCreateFailure(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	app := New(testRuntimeConfig(statePath))
-	app.deps = RuntimeDeps{
+	app.deps = Deps{
 		Logger:           logger,
 		OperationTimeout: defaultOperationTimeout,
 		Retry:            deps.Retry,
@@ -2000,7 +2000,7 @@ func TestReconcileRetriesFullPassAfterTransientCloudflareCreateFailure(t *testin
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	app := New(testRuntimeConfig(statePath))
-	app.deps = RuntimeDeps{
+	app.deps = Deps{
 		Logger:           logger,
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
@@ -2056,7 +2056,7 @@ func TestReconcileReturnsTerminalMutationErrorWithoutRetryOrPersistingState(t *t
 		t.Fatalf("create store: %v", err)
 	}
 
-	deps := RuntimeDeps{
+	deps := Deps{
 		Logger:           slog.New(slog.DiscardHandler),
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
@@ -2291,7 +2291,7 @@ func (o *blockingOutputStub) Provider() contracts.ProviderRef {
 func (o *blockingOutputStub) ListVisible(ctx context.Context) ([]contracts.VisibleRecord, error) {
 	o.mu.Lock()
 	o.listCalls++
-	o.recordDeadlineLocked(blockingOutputListVisible, ctx)
+	o.recordDeadlineLocked(ctx, blockingOutputListVisible)
 	shouldBlock := o.blockOperation == blockingOutputListVisible
 	visible := append([]contracts.VisibleRecord(nil), o.visible...)
 	o.mu.Unlock()
@@ -2305,7 +2305,7 @@ func (o *blockingOutputStub) ListVisible(ctx context.Context) ([]contracts.Visib
 func (o *blockingOutputStub) Create(ctx context.Context, desired contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
 	o.mu.Lock()
 	o.createCalls++
-	o.recordDeadlineLocked(blockingOutputCreate, ctx)
+	o.recordDeadlineLocked(ctx, blockingOutputCreate)
 	shouldBlock := o.blockOperation == blockingOutputCreate
 	o.mu.Unlock()
 	if shouldBlock {
@@ -2321,7 +2321,7 @@ func (o *blockingOutputStub) Create(ctx context.Context, desired contracts.Desir
 func (o *blockingOutputStub) Update(ctx context.Context, visible contracts.VisibleRecord, desired contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
 	o.mu.Lock()
 	o.updateCalls++
-	o.recordDeadlineLocked(blockingOutputUpdate, ctx)
+	o.recordDeadlineLocked(ctx, blockingOutputUpdate)
 	shouldBlock := o.blockOperation == blockingOutputUpdate
 	o.mu.Unlock()
 	if shouldBlock {
@@ -2343,7 +2343,7 @@ func (o *blockingOutputStub) Update(ctx context.Context, visible contracts.Visib
 func (o *blockingOutputStub) Delete(ctx context.Context, visible contracts.VisibleRecord) error {
 	o.mu.Lock()
 	o.deleteCalls++
-	o.recordDeadlineLocked(blockingOutputDelete, ctx)
+	o.recordDeadlineLocked(ctx, blockingOutputDelete)
 	shouldBlock := o.blockOperation == blockingOutputDelete
 	o.mu.Unlock()
 	if shouldBlock {
@@ -2362,7 +2362,7 @@ func (o *blockingOutputStub) Delete(ctx context.Context, visible contracts.Visib
 	return nil
 }
 
-func (o *blockingOutputStub) recordDeadlineLocked(operation blockingOutputOperation, ctx context.Context) {
+func (o *blockingOutputStub) recordDeadlineLocked(ctx context.Context, operation blockingOutputOperation) {
 	if o.deadlines == nil {
 		o.deadlines = make(map[blockingOutputOperation]time.Time)
 	}
@@ -2713,7 +2713,7 @@ type stubSourceFactory struct {
 	source contracts.Source
 }
 
-func (f stubSourceFactory) build(config.SourceConfig, RuntimeDeps) (contracts.Source, error) {
+func (f stubSourceFactory) build(config.SourceConfig, Deps) (contracts.Source, error) {
 	return f.source, nil
 }
 
@@ -2721,7 +2721,7 @@ type stubOutputFactory struct {
 	output contracts.Output
 }
 
-func (f stubOutputFactory) build(config.OutputConfig, RuntimeDeps) (contracts.Output, error) {
+func (f stubOutputFactory) build(config.OutputConfig, Deps) (contracts.Output, error) {
 	return f.output, nil
 }
 
@@ -2742,8 +2742,8 @@ func testRuntimeConfig(statePath string) config.Config {
 	}
 }
 
-func testRuntimeDeps(retry RetryPolicy, watchHintDebounce time.Duration) RuntimeDeps {
-	return RuntimeDeps{
+func testRuntimeDeps(retry RetryPolicy, watchHintDebounce time.Duration) Deps {
+	return Deps{
 		Logger:            slog.New(slog.DiscardHandler),
 		OperationTimeout:  defaultOperationTimeout,
 		Retry:             retry,
@@ -2751,7 +2751,7 @@ func testRuntimeDeps(retry RetryPolicy, watchHintDebounce time.Duration) Runtime
 	}
 }
 
-func setTestProviders(app *App, deps RuntimeDeps, sources []contracts.Source, outputs []contracts.Output) {
+func setTestProviders(app *App, deps Deps, sources []contracts.Source, outputs []contracts.Output) {
 	app.deps = deps
 	app.setProviders(sources, outputs, deps)
 }

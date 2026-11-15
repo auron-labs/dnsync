@@ -44,6 +44,31 @@ linters:
     - whitespace
     - wrapcheck
 
+  settings:
+    exhaustive:
+      # Event type/action switches intentionally handle only the values we react to.
+      default-signifies-exhaustive: true
+    wrapcheck:
+      # Context cancellation errors are compared against sentinels by callers.
+      extra-ignore-sigs:
+        - (context.Context).Err
+      # Decorators over the contracts interfaces forward errors that the
+      # underlying provider has already wrapped.
+      ignore-package-globs:
+        - github.com/auron-labs/dnsync/internal/contracts
+  exclusions:
+    presets:
+      - comments
+    rules:
+      # Tests read temp files by variable path and use fixture credentials.
+      - path: _test\.go
+        linters:
+          - gosec
+      # Test fakes and no-op providers return a nil provenance to mean "none".
+      - path: (_test\.go|internal/providers/)
+        linters:
+          - nilnil
+
 formatters:
   enable:
     - gofumpt
