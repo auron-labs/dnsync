@@ -168,7 +168,6 @@ func TestValidateRuntimeAndCredentialFields(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := validConfig()
 			tt.mutate(&cfg)
@@ -336,7 +335,6 @@ func TestValidateCloudflareTunnelConfiguration(t *testing.T) {
 		}, want: "exactly one enabled cloudflare output"},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			caseCfg := validConfig()
 			caseTunnel := *tunnelOutput.Tunnel

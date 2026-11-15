@@ -12,7 +12,7 @@ can you investigate how we could do this? i'd like live syncing so when i bring 
 
 we may even just rely on the godoxy api otherwise.
 
-i would like to expand this into other inputs/outputs in the future eg. nginx-proxy-manager/traefik/caddy for http, and then adguard-home, pihole, cloudlare etc. it'll need to be config driven (toml). 
+i would like to expand this into other inputs/outputs in the future eg. nginx-proxy-manager/traefik/caddy for http, and then adguard-home, pihole, cloudlare etc. it'll need to be config driven (toml).
 
 so let's build it in a way that allows for multiple sources and multiple outputs. but we'll focus solely on adguard-home and godoxy for now.
 

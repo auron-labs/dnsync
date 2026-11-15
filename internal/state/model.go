@@ -3,6 +3,7 @@ package state
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -79,7 +80,7 @@ func newInstallationID() (string, error) {
 
 func validateInstallationID(id string) error {
 	if id == "" {
-		return fmt.Errorf("installation ID is required")
+		return errors.New("installation ID is required")
 	}
 	if len(id) != 36 || id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-' {
 		return fmt.Errorf("installation ID %q must be a canonical UUID v4", id)

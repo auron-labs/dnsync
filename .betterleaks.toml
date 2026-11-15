@@ -1,0 +1,19 @@
+[extend]
+useDefault = true
+
+# Limit the exemption to passwords used as test fixtures; other secret rules
+# continue to scan these files.
+[[allowlists]]
+targetRules = ["generic-password"]
+paths = [
+  "^tests/",
+  '\.(?:test|spec)\.(?:js|jsx|ts|tsx|mjs|cjs|mts|cts)$',
+  "(?:^|/)__tests__/",
+  '_test\.go$',
+  "^testdata/",
+]
+
+# The live-test stack uses throwaway AdGuard credentials, and the docs show placeholder passwords.
+[[allowlists]]
+targetRules = ["curl-auth-user", "generic-password"]
+paths = ["^deploy/compose/live-test/", "^docs/", "^README\\.md$"]

@@ -95,7 +95,7 @@ func newRuntimeDeps(cfg config.Config, getenv func(string) string, stdout io.Wri
 		if logCloser != nil {
 			_ = logCloser.Close()
 		}
-		return RuntimeDeps{}, fmt.Errorf("logging.format must be one of json or text")
+		return RuntimeDeps{}, errors.New("logging.format must be one of json or text")
 	}
 	handler = newRedactingHandler(handler, configSecrets(cfg))
 
@@ -123,7 +123,7 @@ func parseLogLevel(raw string) (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	default:
-		return 0, fmt.Errorf("logging.level must be one of trace, debug, info, warn, error")
+		return 0, errors.New("logging.level must be one of trace, debug, info, warn, error")
 	}
 }
 
@@ -162,7 +162,7 @@ func parseOperationTimeout(cfg config.RuntimeConfig) (time.Duration, error) {
 	}
 
 	if duration <= 0 {
-		return 0, fmt.Errorf("runtime.operation_timeout must be greater than zero")
+		return 0, errors.New("runtime.operation_timeout must be greater than zero")
 	}
 
 	return duration, nil
@@ -179,7 +179,7 @@ func parseRemovalGrace(cfg config.RuntimeConfig) (time.Duration, error) {
 		return 0, fmt.Errorf("parse runtime.removal_grace_period: %w", err)
 	}
 	if duration < 0 {
-		return 0, fmt.Errorf("runtime.removal_grace_period must be zero or greater")
+		return 0, errors.New("runtime.removal_grace_period must be zero or greater")
 	}
 	return duration, nil
 }

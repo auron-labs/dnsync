@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -279,5 +278,5 @@ func waitFor(t *testing.T, ready func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	t.Fatal(fmt.Sprintf("condition was not met before timeout"))
+	t.Fatal("condition was not met before timeout")
 }

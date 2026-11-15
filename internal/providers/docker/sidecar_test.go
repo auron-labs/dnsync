@@ -80,6 +80,7 @@ type sidecarClientFake struct {
 func (f *sidecarClientFake) InspectContainer(context.Context, string) (tunnelSidecarContainer, error) {
 	return f.container, f.inspectErr
 }
+
 func (f *sidecarClientFake) ImageExists(context.Context, string) (bool, error) {
 	return f.imagePresent, nil
 }
@@ -93,10 +94,12 @@ func (f *sidecarClientFake) RemoveContainer(_ context.Context, id string) error 
 	f.removed = append(f.removed, id)
 	return nil
 }
+
 func (f *sidecarClientFake) ConnectNetwork(_ context.Context, networkID, containerID string) error {
 	f.connected = append(f.connected, networkID+":"+containerID)
 	return nil
 }
+
 func (f *sidecarClientFake) DisconnectNetwork(_ context.Context, networkID, containerID string) error {
 	f.disconnected = append(f.disconnected, networkID+":"+containerID)
 	return nil

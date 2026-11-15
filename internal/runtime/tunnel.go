@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -103,7 +104,7 @@ func (a *App) prepareTunnel(ctx context.Context, owned state.Snapshot, routes []
 	}
 	if binding == nil {
 		if len(routes) != 0 {
-			return owned, nil, fmt.Errorf("received Cloudflare Tunnel routes without a configured tunnel output")
+			return owned, nil, errors.New("received Cloudflare Tunnel routes without a configured tunnel output")
 		}
 		return owned, nil, nil
 	}
@@ -317,7 +318,7 @@ func ownedTunnel(owned state.Snapshot, binding *tunnelBinding) (*state.ManagedTu
 		return nil, nil
 	}
 	if matches[0].Name != binding.config.Name || matches[0].AccountID != binding.config.AccountID || strings.TrimSpace(matches[0].TunnelID) == "" {
-		return nil, fmt.Errorf("managed tunnel state does not match configured output/source identity")
+		return nil, errors.New("managed tunnel state does not match configured output/source identity")
 	}
 	result := matches[0]
 	if result.Image == "" {

@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -13,7 +14,7 @@ type Store struct {
 
 func NewStore(path string) (*Store, error) {
 	if path == "" {
-		return nil, fmt.Errorf("state path is required")
+		return nil, errors.New("state path is required")
 	}
 
 	store := &Store{path: path}
@@ -110,7 +111,7 @@ func (s *Store) Save(snapshot Snapshot) error {
 		return fmt.Errorf("invalid state snapshot installation ID: %w", err)
 	}
 	if s.installationID != "" && snapshot.InstallationID != s.installationID {
-		return fmt.Errorf("state snapshot installation ID does not match store identity")
+		return errors.New("state snapshot installation ID does not match store identity")
 	}
 
 	snapshot.Version = SnapshotVersion

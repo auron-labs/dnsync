@@ -1171,7 +1171,7 @@ func TestAppRunRetriesStartupHandoffReconcileAfterTransientSourceFailure(t *test
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
 	app.newDeps = func(config.Config) (RuntimeDeps, error) {
 		return RuntimeDeps{
-			Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
 				InitialInterval: time.Millisecond,
@@ -1229,7 +1229,7 @@ func TestAppRunRetriesWatchTriggeredReconcileAfterOtherSourceFailure(t *testing.
 	}
 	output := &startupOutputStub{provider: contracts.ProviderRef{Type: "adguard", Name: "primary"}}
 	deps := RuntimeDeps{
-		Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		Logger:           slog.New(slog.DiscardHandler),
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
 			InitialInterval: time.Millisecond,
@@ -1435,7 +1435,7 @@ func TestAppRunRestartsWatchBeforeReconnectRepairRetries(t *testing.T) {
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
 	app.newDeps = func(config.Config) (RuntimeDeps, error) {
 		return RuntimeDeps{
-			Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
 				InitialInterval: 10 * time.Millisecond,
@@ -1487,7 +1487,7 @@ func TestAppRunBacksOffRepeatedWatchReconnects(t *testing.T) {
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
 	app.newDeps = func(config.Config) (RuntimeDeps, error) {
 		return RuntimeDeps{
-			Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
 				InitialInterval: 10 * time.Millisecond,
@@ -1498,7 +1498,7 @@ func TestAppRunBacksOffRepeatedWatchReconnects(t *testing.T) {
 	}
 	app.newDeps = func(config.Config) (RuntimeDeps, error) {
 		return RuntimeDeps{
-			Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
 				InitialInterval: 25 * time.Millisecond,
@@ -1564,7 +1564,7 @@ func TestAppRunReconnectBackoffDoesNotBlockOtherWatchHints(t *testing.T) {
 	}
 	output := &startupOutputStub{provider: contracts.ProviderRef{Type: "adguard", Name: "primary"}}
 	deps := RuntimeDeps{
-		Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		Logger:           slog.New(slog.DiscardHandler),
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
 			InitialInterval: 100 * time.Millisecond,
@@ -1645,7 +1645,7 @@ func TestAppRunResetsReconnectBackoffAfterSuccessfulRepair(t *testing.T) {
 	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
 	app.newDeps = func(config.Config) (RuntimeDeps, error) {
 		return RuntimeDeps{
-			Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+			Logger:           slog.New(slog.DiscardHandler),
 			OperationTimeout: defaultOperationTimeout,
 			Retry: RetryPolicy{
 				InitialInterval: 25 * time.Millisecond,
@@ -1858,7 +1858,7 @@ func TestReconcileRetriesFullPassAfterTransientCreateFailure(t *testing.T) {
 	}
 
 	deps := RuntimeDeps{
-		Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		Logger:           slog.New(slog.DiscardHandler),
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
 			InitialInterval: time.Millisecond,
@@ -2057,7 +2057,7 @@ func TestReconcileReturnsTerminalMutationErrorWithoutRetryOrPersistingState(t *t
 	}
 
 	deps := RuntimeDeps{
-		Logger:           slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		Logger:           slog.New(slog.DiscardHandler),
 		OperationTimeout: defaultOperationTimeout,
 		Retry: RetryPolicy{
 			InitialInterval: time.Millisecond,
@@ -2744,7 +2744,7 @@ func testRuntimeConfig(statePath string) config.Config {
 
 func testRuntimeDeps(retry RetryPolicy, watchHintDebounce time.Duration) RuntimeDeps {
 	return RuntimeDeps{
-		Logger:            slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		Logger:            slog.New(slog.DiscardHandler),
 		OperationTimeout:  defaultOperationTimeout,
 		Retry:             retry,
 		WatchHintDebounce: watchHintDebounce,

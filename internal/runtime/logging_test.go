@@ -58,11 +58,11 @@ func TestRotatingFileConcurrentWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
+	for range 32 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for j := 0; j < 20; j++ {
+			for range 20 {
 				if _, err := writer.Write([]byte("record\n")); err != nil {
 					t.Errorf("write: %v", err)
 					return

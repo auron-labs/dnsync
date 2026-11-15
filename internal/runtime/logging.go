@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -30,13 +31,13 @@ type rotatingFile struct {
 func newRotatingFile(path string, maxBytes int64, backups int) (*rotatingFile, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return nil, fmt.Errorf("path is required")
+		return nil, errors.New("path is required")
 	}
 	if maxBytes <= 0 {
-		return nil, fmt.Errorf("max bytes must be greater than zero")
+		return nil, errors.New("max bytes must be greater than zero")
 	}
 	if backups < 1 {
-		return nil, fmt.Errorf("backup count must be at least one")
+		return nil, errors.New("backup count must be at least one")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("create log directory: %w", err)

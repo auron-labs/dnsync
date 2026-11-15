@@ -34,10 +34,7 @@ type Provider struct {
 }
 
 func New(cfg config.SourceConfig, logger *slog.Logger) (*Provider, error) {
-	cli, err := mobyclient.NewClientWithOpts(
-		mobyclient.WithHost(cfg.Endpoint),
-		mobyclient.WithAPIVersionNegotiation(),
-	)
+	cli, err := mobyclient.New(mobyclient.WithHost(cfg.Endpoint), mobyclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("create docker client: %w", err)
 	}
@@ -235,7 +232,7 @@ func (p *Provider) Watch(ctx context.Context) contracts.SourceWatch {
 				if !ok {
 					stream.Messages = nil
 					if stream.Err == nil && ctx.Err() == nil {
-						errCh <- fmt.Errorf("docker event stream ended")
+						errCh <- errors.New("docker event stream ended")
 						return
 					}
 					continue
@@ -251,15 +248,15 @@ func (p *Provider) Watch(ctx context.Context) contracts.SourceWatch {
 				if !ok {
 					stream.Err = nil
 					if stream.Messages == nil && ctx.Err() == nil {
-						errCh <- fmt.Errorf("docker event stream ended")
+						errCh <- errors.New("docker event stream ended")
 						return
 					}
 					continue
 				}
-				if err == nil || err == context.Canceled {
+				if err == nil || errors.Is(err, context.Canceled) {
 					return
 				}
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					err = fmt.Errorf("docker event stream ended: %w", err)
 				}
 				errCh <- err

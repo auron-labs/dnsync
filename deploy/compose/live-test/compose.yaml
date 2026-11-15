@@ -1,20 +1,8 @@
 name: dnsync-live-test
 
 services:
-  adguardhome:
-    image: adguard/adguardhome:latest
-    restart: unless-stopped
-    ports:
-      - "13000:3000/tcp"
-      - "5353:53/tcp"
-      - "5353:53/udp"
-    volumes:
-      - ${LIVE_TEST_ADGUARD_CONF_DIR:-./adguard/conf}:/opt/adguardhome/conf
-      - ${LIVE_TEST_ADGUARD_WORK_DIR:-./adguard/work}:/opt/adguardhome/work
-
   adguard-init:
     image: curlimages/curl:8.23.0
-    restart: "no"
     depends_on:
       - adguardhome
     environment:
@@ -45,25 +33,36 @@ services:
         until auth_ready; do
           sleep 1
         done
+    restart: "no"
+  adguardhome:
+    image: adguard/adguardhome:v0.107.80
+    volumes:
+      - ${LIVE_TEST_ADGUARD_CONF_DIR:-./adguard/conf}:/opt/adguardhome/conf
+      - ${LIVE_TEST_ADGUARD_WORK_DIR:-./adguard/work}:/opt/adguardhome/work
+    ports:
+      - "127.0.0.1:5353:53/tcp"
+      - "127.0.0.1:5353:53/udp"
+      - "127.0.0.1:13000:3000/tcp"
+    restart: unless-stopped
 
   dnsync:
     build:
       context: ../../..
       dockerfile: Dockerfile
-    restart: unless-stopped
     depends_on:
       adguard-init:
         condition: service_completed_successfully
+    volumes:
+      - ./config.toml:/etc/dnsync/config.toml:ro
+      - ${LIVE_TEST_STATE_DIR:-./state}:/var/lib/dnsync
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       ADGUARD_PASSWORD: adguard-test-password
       LOG_FILE: /var/lib/dnsync/runtime.log
     command:
       - -config
       - /etc/dnsync/config.toml
-    volumes:
-      - ./config.toml:/etc/dnsync/config.toml:ro
-      - ${LIVE_TEST_STATE_DIR:-./state}:/var/lib/dnsync
-      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
 
   whoami:
     image: traefik/whoami:v1.12.0

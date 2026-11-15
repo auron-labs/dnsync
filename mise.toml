@@ -1,5 +1,54 @@
 [tools]
+betterleaks = "1.10.1"
 go = "1.27.4"
+golangci-lint = "2.15.0"
+hadolint = "2.15.1"
+hk = "2.12.0"
+ls-lint = "2.3.2"
+"npm:dclint" = "3.1.0"
+pinact = "5.0.2"
+pkl = "0.33.0"
+shellcheck = "0.11.0"
+shfmt = "3.14.1"
+tombi = "1.11.2"
+zizmor = "1.32.0"
 
-[tasks]
-live-test = "deploy/compose/live-test/verify.sh"
+[env]
+BETTERLEAKS_CONFIG = "{{ config_root }}/.betterleaks.toml"
+
+[tasks.setup]
+description = "Install dependencies and Git hooks"
+depends = ["install"]
+run = "hk install --mise"
+
+[tasks.install]
+description = "Download Go module dependencies"
+run = "go mod download"
+
+[tasks.build]
+description = "Build the dnsync binary into bin/"
+run = "go build -o bin/dnsync ./cmd/dnsync"
+
+[tasks.run]
+description = "Run dnsync from source"
+run = "go run ./cmd/dnsync"
+
+[tasks.test]
+description = "Run the unit test suite"
+run = "go test ./..."
+
+[tasks.check]
+description = "Run every lint and format check"
+run = "hk check --all"
+
+[tasks.fix]
+description = "Apply automatic lint and format fixes"
+run = "hk fix --all"
+
+[tasks.live-test]
+description = "Run the Docker/AdGuard live smoke test"
+run = "deploy/compose/live-test/verify.sh"
+
+[tasks."install:local"]
+description = "Build and install dnsync into ~/.local/bin"
+run = 'go build -o "$HOME/.local/bin/dnsync" ./cmd/dnsync'

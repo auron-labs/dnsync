@@ -1,0 +1,3 @@
+ignored:
+  # The distroless static-debian13 tag is the image's rolling release channel.
+  - DL3006

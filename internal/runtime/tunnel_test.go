@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -176,7 +175,7 @@ func newTunnelLifecycleApp(t *testing.T, output *tunnelLifecycleOutput, source *
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &App{cfg: config.Config{Outputs: []config.OutputConfig{{Type: "cloudflare", Name: "primary", Tunnel: &config.TunnelConfig{AccountID: "account", Name: "main", Source: "local", ConnectorImage: "cloudflared:test"}}}}, store: store, outputs: []contracts.Output{output}, sources: []contracts.Source{source}, deps: RuntimeDeps{RemovalGrace: 0, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+	app := &App{cfg: config.Config{Outputs: []config.OutputConfig{{Type: "cloudflare", Name: "primary", Tunnel: &config.TunnelConfig{AccountID: "account", Name: "main", Source: "local", ConnectorImage: "cloudflared:test"}}}}, store: store, outputs: []contracts.Output{output}, sources: []contracts.Source{source}, deps: RuntimeDeps{RemovalGrace: 0, Logger: slog.New(slog.DiscardHandler)}}
 	return app
 }
 
@@ -186,9 +185,11 @@ func (o *tunnelTestOutput) Provider() contracts.ProviderRef { return o.ref }
 func (*tunnelTestOutput) ListVisible(context.Context) ([]contracts.VisibleRecord, error) {
 	return nil, nil
 }
+
 func (*tunnelTestOutput) Create(context.Context, contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
 	return nil, nil
 }
+
 func (*tunnelTestOutput) Update(context.Context, contracts.VisibleRecord, contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
 	return nil, nil
 }
@@ -208,9 +209,11 @@ func (o *tunnelLifecycleOutput) Provider() contracts.ProviderRef { return o.ref 
 func (*tunnelLifecycleOutput) ListVisible(context.Context) ([]contracts.VisibleRecord, error) {
 	return nil, nil
 }
+
 func (*tunnelLifecycleOutput) Create(context.Context, contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
 	return nil, nil
 }
+
 func (*tunnelLifecycleOutput) Update(context.Context, contracts.VisibleRecord, contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
 	return nil, nil
 }
@@ -219,13 +222,16 @@ func (o *tunnelLifecycleOutput) EnsureTunnel(_ context.Context, _, _ string, man
 	o.managedIDs = append(o.managedIDs, managedID)
 	return o.ensured, nil
 }
+
 func (*tunnelLifecycleOutput) TunnelToken(context.Context, string, string) (string, error) {
 	return "secret", nil
 }
+
 func (o *tunnelLifecycleOutput) ConfigureTunnel(context.Context, string, string, []contracts.DesiredTunnelRoute) error {
 	o.configureCalls++
 	return o.configureErr
 }
+
 func (o *tunnelLifecycleOutput) DeleteTunnel(context.Context, string, string) error {
 	o.deletes++
 	return o.deleteErr
@@ -242,10 +248,12 @@ func (s *tunnelLifecycleSource) Provider() contracts.ProviderRef { return s.ref 
 func (*tunnelLifecycleSource) ListDesired(context.Context) (contracts.DesiredSnapshot, error) {
 	return contracts.DesiredSnapshot{}, nil
 }
+
 func (s *tunnelLifecycleSource) EnsureTunnelSidecar(_ context.Context, spec contracts.TunnelSidecarSpec) (string, error) {
 	s.ensuredTunnelIDs = append(s.ensuredTunnelIDs, spec.TunnelID)
 	return s.sidecarID, nil
 }
+
 func (s *tunnelLifecycleSource) DeleteTunnelSidecar(_ context.Context, id string, _ contracts.TunnelSidecarSpec) error {
 	s.deleted = append(s.deleted, id)
 	return nil

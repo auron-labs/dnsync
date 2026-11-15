@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"regexp"
 	"sort"
 	"strings"
@@ -353,7 +354,7 @@ func (p *Provider) DeleteTunnel(ctx context.Context, accountID, tunnelID string)
 	})
 	if err != nil {
 		var apiErr *cloudflare.Error
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 			return nil
 		}
 		return wrapCloudflareTemporary(fmt.Errorf("delete cloudflare tunnel: %w", err))
@@ -461,7 +462,7 @@ func isTemporaryCloudflareError(err error) bool {
 
 	var apiErr *cloudflare.Error
 	if errors.As(err, &apiErr) {
-		return apiErr.StatusCode == 408 || apiErr.StatusCode == 429 || apiErr.StatusCode >= 500
+		return apiErr.StatusCode == http.StatusRequestTimeout || apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
 	}
 
 	var netErr net.Error

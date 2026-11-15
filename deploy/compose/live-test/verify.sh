@@ -1,9 +1,11 @@
 #!/bin/sh
+# Predicate helpers are deliberately called in conditions, where set -e does not apply.
+# shellcheck disable=SC2310,SC2312
 
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
+SCRIPT_DIR=$(CDPATH="" cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH="" cd -- "$SCRIPT_DIR/../../.." && pwd)
 COMPOSE_FILE="$REPO_ROOT/deploy/compose/live-test/compose.yaml"
 ADGUARD_URL="http://127.0.0.1:13000"
 ADGUARD_DNS_HOST="127.0.0.1"
@@ -37,7 +39,6 @@ COMPOSE_LOG="$TMP_DIR/compose.log"
 ADGUARD_CONF_DIR="$RUNTIME_DIR/adguard/conf"
 ADGUARD_WORK_DIR="$RUNTIME_DIR/adguard/work"
 STATE_DIR="$RUNTIME_DIR/state"
-LOG_FILE_PATH="$STATE_DIR/runtime.log"
 STATE_SNAPSHOT_PATH="$TMP_DIR/state.snapshot.json"
 LOG_SNAPSHOT_PATH="$TMP_DIR/runtime.log.snapshot"
 
@@ -107,8 +108,8 @@ rewrite_present() {
 	answer=$2
 	json=$(list_rewrites | tr -d '[:space:]') || return 1
 	case "$json" in
-		*"\"domain\":\"$domain\",\"answer\":\"$answer\""*|*"\"answer\":\"$answer\",\"domain\":\"$domain\""*) return 0 ;;
-		*) return 1 ;;
+	*"\"domain\":\"$domain\",\"answer\":\"$answer\""* | *"\"answer\":\"$answer\",\"domain\":\"$domain\""*) return 0 ;;
+	*) return 1 ;;
 	esac
 }
 

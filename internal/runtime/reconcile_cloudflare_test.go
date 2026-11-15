@@ -110,7 +110,6 @@ func TestCloudflareMarkerDeletesStaleRecordAfterVisibleAnswerDrift(t *testing.T)
 		{name: "matching remote ID", remoteID: "rec-stale", wantDeletes: 1},
 		{name: "differing remote ID", remoteID: "rec-replaced", wantDeletes: 0},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			fakeOutput := &reconcileFakeOutput{provider: provider}
 			result, err := ReconcileOutput(context.Background(), ReconcileInput{
@@ -162,7 +161,6 @@ func TestCloudflareMarkedStateRequiresCurrentMarkerAndRemoteID(t *testing.T) {
 		{name: "foreign marker", marker: "123e4567-e89b-42d3-a456-426614174001", remoteID: "rec-owned"},
 		{name: "mismatched remote ID", marker: installationID, remoteID: "rec-replaced"},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			visible := contracts.VisibleRecord{
 				Output:     provider,
@@ -232,7 +230,6 @@ func TestCloudflareCleanupRequiresMatchingPersistedRemoteIDWithoutMarker(t *test
 		Provenance: &contracts.RecordProvenance{RemoteID: "rec-owned"},
 	}
 	for _, remoteID := range []string{"rec-manual", "rec-owned"} {
-		remoteID := remoteID
 		t.Run(remoteID, func(t *testing.T) {
 			fakeOutput := &reconcileFakeOutput{provider: provider}
 			result, err := ReconcileOutput(context.Background(), ReconcileInput{
@@ -265,7 +262,6 @@ func TestCloudflareMarkerFlowDoesNotClaimForeignOrUnmarkedRecords(t *testing.T) 
 		{name: "foreign marker", owner: foreignID},
 		{name: "no marker", owner: ""},
 	} {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			fakeOutput := &reconcileFakeOutput{provider: provider}
 			visible := contracts.VisibleRecord{Output: provider, Hostname: "app.example.com", Answer: "10.0.0.10", Provenance: &contracts.RecordProvenance{RemoteID: "manual-rec", InstallationID: test.owner}}

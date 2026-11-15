@@ -18,12 +18,12 @@ username = "admin"
 password_ref = "ENV:ADGUARD_PASSWORD"
 
 # Optional second output: enable Cloudflare sync for the same derived records.
-#[[outputs]]
-#type = "cloudflare"
-#name = "primary-cloudflare"
-#enabled = true
-#zone_id = "your-zone-id"
-#api_key_ref = "ENV:CLOUDFLARE_API_KEY"
+# [[outputs]]
+# type = "cloudflare"
+# name = "primary-cloudflare"
+# enabled = true
+# zone_id = "your-zone-id"
+# api_key_ref = "ENV:CLOUDFLARE_API_KEY"
 
 [state]
 # This path must stay writable by the deployed process.

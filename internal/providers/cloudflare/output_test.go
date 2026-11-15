@@ -199,7 +199,6 @@ func TestCloudflareCreateInfersRecordType(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -742,7 +741,6 @@ func TestRecoverableDuplicateRecordError(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			body, err := json.Marshal(map[string]any{
@@ -781,7 +779,6 @@ func TestWrapCloudflareTemporaryPreservesTemporaryClassificationThroughWrapping(
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -815,7 +812,6 @@ func TestIsTemporaryCloudflareError(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := isTemporaryCloudflareError(tt.err); got != tt.want {
@@ -844,7 +840,6 @@ func TestCloudflareListVisibleClassifiesZoneLookupErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -890,7 +885,6 @@ func TestCloudflareListVisibleClassifiesPaginationErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -944,7 +938,6 @@ func TestCloudflareCreateUpdateAndDeleteClassifyCloudflareIOErrors(t *testing.T)
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

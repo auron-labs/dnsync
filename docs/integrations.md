@@ -42,7 +42,7 @@ The Cloudflare provider uses an API token and a zone ID.
 
 ## Upstream references
 
-This repository’s source tree is the best reference for supported behavior:
+This repository's source tree is the best reference for supported behavior:
 
 - `internal/providers/docker/*`
 - `internal/providers/adguard/*`
