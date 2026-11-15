@@ -166,6 +166,27 @@ func TestValidateRuntimeAndCredentialFields(t *testing.T) {
 			wantErr: "must set exactly one of api_key or api_key_ref",
 		},
 		{
+			name: "enabled pihole output requires url",
+			mutate: func(cfg *Config) {
+				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "pihole", Name: "primary-pihole", PasswordRef: "ENV:PIHOLE_PASSWORD"})
+			},
+			wantErr: "outputs[1].url is required",
+		},
+		{
+			name: "enabled pihole output requires password ref",
+			mutate: func(cfg *Config) {
+				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "pihole", Name: "primary-pihole", URL: "http://pihole"})
+			},
+			wantErr: "outputs[1].password_ref is required",
+		},
+		{
+			name: "enabled pihole output rejects inline password",
+			mutate: func(cfg *Config) {
+				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "pihole", Name: "primary-pihole", URL: "http://pihole", Password: "inline", PasswordRef: "ENV:PIHOLE_PASSWORD"})
+			},
+			wantErr: "outputs[1].password must not be set inline; use password_ref",
+		},
+		{
 			name: "enabled cloudflare output requires zone id",
 			mutate: func(cfg *Config) {
 				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "cloudflare", Name: "primary-cloudflare", APIKey: "secret-token"})

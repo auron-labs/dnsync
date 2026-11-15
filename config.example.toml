@@ -25,6 +25,14 @@ password_ref = "ENV:ADGUARD_PASSWORD"
 # url = "http://telltale:8053"
 # api_key_ref = "ENV:TELLTALEDNS_API_KEY"
 
+# Optional: Pi-hole v6 local DNS records. With two-factor authentication
+# enabled, use an app password and set webserver.api.app_sudo = true.
+# [[outputs]]
+# type = "pihole"
+# name = "primary-pihole"
+# url = "http://pihole"
+# password_ref = "ENV:PIHOLE_PASSWORD"
+
 # Optional: enable one dedicated Cloudflare Tunnel output. The source name must
 # match exactly one [[sources]] entry of type "docker".
 # [[outputs]]

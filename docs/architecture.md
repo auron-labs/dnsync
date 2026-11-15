@@ -19,6 +19,7 @@
 | `internal/providers/adguard` | AdGuard rewrite output. |
 | `internal/providers/cloudflare` | Cloudflare DNS output. |
 | `internal/providers/telltaledns` | TelltaleDNS local names output. |
+| `internal/providers/pihole` | Pi-hole local DNS output. |
 | `internal/state` | Persisted ownership snapshot. |
 
 ## Reconciliation model

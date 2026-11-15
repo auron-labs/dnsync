@@ -44,6 +44,26 @@ Answers that parse as IPv4 or IPv6 addresses become `A` or `AAAA` records; anyth
 
 Records carry no stable ID, so like AdGuard, stale cleanup relies on the hostname/answer persisted by the daemon and is destructive for a unique exact match. Temporary statuses treated as retryable include `408`, `429`, and `5xx` responses.
 
+## Pi-hole output
+
+The Pi-hole provider uses the Pi-hole v6 REST API. The Pi-hole v5 `admin/api.php` API is not supported.
+
+- Log in: `POST /api/auth`, then send the session ID as `X-FTL-SID`
+- List: `GET /api/config/dns`, reading `dns.hosts` and `dns.cnameRecords`
+- Add an entry: `PUT /api/config/dns/{hosts|cnameRecords}/{entry}`
+- Remove an entry: `DELETE /api/config/dns/{hosts|cnameRecords}/{entry}`
+- Log out: `DELETE /api/auth` when dnsync stops
+
+dnsync logs in on first use and reuses the session, which Pi-hole extends on every request. If Pi-hole answers `401` because the session expired or was invalidated, dnsync logs in again and retries the request once. Logging out on shutdown keeps the session from holding one of Pi-hole's `webserver.api.max_sessions` seats until it expires.
+
+Answers that parse as IPv4 or IPv6 addresses become `dns.hosts` entries (`IP HOSTNAME`); anything else becomes a `dns.cnameRecords` entry (`HOSTNAME,TARGET`). Changing a CNAME on the same hostname removes the old entry before adding the new one, because Pi-hole rejects a second CNAME for a name. Each CNAME change restarts Pi-hole's DNS resolver; requests that fail during the restart are retried.
+
+Entries that list several names, such as `IP NAME1 NAME2` or `NAME1,NAME2,TARGET`, appear as visible records but are never rewritten. A change that would remove one of their names fails, and the entry must be edited in Pi-hole.
+
+Pi-hole refuses API changes to `dns.hosts` or `dns.cnameRecords` while they are set through `FTLCONF_` environment variables or `misc.readOnly` is enabled.
+
+Entries carry no provenance, so like AdGuard, dnsync only changes entries backed by its own state and leaves manual entries alone. When labels stop producing a record, dnsync keeps the entry and logs a blocked-cleanup warning instead of deleting it; remove it in Pi-hole if it is no longer needed. Network failures and `408`, `429` (including exhausted API seats), and `5xx` responses are retryable.
+
 ## Cloudflare output
 
 The Cloudflare provider uses an API token and a zone ID.
@@ -61,4 +81,5 @@ This repository's source tree is the best reference for supported behavior:
 - `internal/providers/docker/*`
 - `internal/providers/adguard/*`
 - `internal/providers/telltaledns/*`
+- `internal/providers/pihole/*`
 - `internal/providers/cloudflare/*`

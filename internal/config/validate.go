@@ -114,6 +114,17 @@ func Validate(cfg Config) error {
 			if hasAPIKey == hasAPIKeyRef {
 				return fmt.Errorf("outputs[%d] must set exactly one of api_key or api_key_ref", i)
 			}
+		case "pihole":
+			if strings.TrimSpace(output.URL) == "" {
+				return fmt.Errorf("outputs[%d].url is required", i)
+			}
+
+			if strings.TrimSpace(output.Password) != "" {
+				return fmt.Errorf("outputs[%d].password must not be set inline; use password_ref", i)
+			}
+			if strings.TrimSpace(output.PasswordRef) == "" {
+				return fmt.Errorf("outputs[%d].password_ref is required", i)
+			}
 		default:
 			if output.Tunnel != nil {
 				return fmt.Errorf("outputs[%d].tunnel is only supported for cloudflare outputs", i)

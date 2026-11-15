@@ -10,6 +10,7 @@ import (
 	adguardprovider "github.com/auron-labs/dnsync/internal/providers/adguard"
 	cloudflareprovider "github.com/auron-labs/dnsync/internal/providers/cloudflare"
 	dockerprovider "github.com/auron-labs/dnsync/internal/providers/docker"
+	piholeprovider "github.com/auron-labs/dnsync/internal/providers/pihole"
 	telltalednsprovider "github.com/auron-labs/dnsync/internal/providers/telltaledns"
 )
 
@@ -42,6 +43,9 @@ func NewDefaultFactoryRegistry() *FactoryRegistry {
 	}))
 	mustRegister(registry.RegisterOutput("telltaledns", func(cfg config.OutputConfig, _ Deps) (contracts.Output, error) {
 		return telltalednsprovider.New(cfg), nil
+	}))
+	mustRegister(registry.RegisterOutput("pihole", func(cfg config.OutputConfig, _ Deps) (contracts.Output, error) {
+		return piholeprovider.New(cfg), nil
 	}))
 	return registry
 }

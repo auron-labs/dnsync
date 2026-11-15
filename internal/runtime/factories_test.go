@@ -10,6 +10,7 @@ import (
 	adguardstub "github.com/auron-labs/dnsync/internal/providers/adguardstub"
 	cloudflareprovider "github.com/auron-labs/dnsync/internal/providers/cloudflare"
 	dockerprovider "github.com/auron-labs/dnsync/internal/providers/docker"
+	piholeprovider "github.com/auron-labs/dnsync/internal/providers/pihole"
 	telltalednsprovider "github.com/auron-labs/dnsync/internal/providers/telltaledns"
 )
 
@@ -103,6 +104,25 @@ func TestFactoryRegistryBuildsTelltaleDNSOutput(t *testing.T) {
 
 	if _, ok := outputs[0].(*telltalednsprovider.Provider); !ok {
 		t.Fatalf("expected telltaledns provider, got %T", outputs[0])
+	}
+}
+
+func TestFactoryRegistryBuildsClosablePiholeOutput(t *testing.T) {
+	t.Parallel()
+
+	cfg := validRuntimeConfig("unix:///var/run/docker.sock")
+	cfg.Outputs = []config.OutputConfig{{Type: "pihole", Name: "primary", URL: "http://pihole", Password: "secret"}}
+
+	outputs, err := NewDefaultFactoryRegistry().BuildOutputs(cfg, Deps{})
+	if err != nil {
+		t.Fatalf("build outputs: %v", err)
+	}
+
+	if _, ok := outputs[0].(*piholeprovider.Provider); !ok {
+		t.Fatalf("expected pihole provider, got %T", outputs[0])
+	}
+	if _, ok := outputs[0].(contracts.ClosableOutput); !ok {
+		t.Fatalf("expected pihole provider to release its session on shutdown, got %T", outputs[0])
 	}
 }
 

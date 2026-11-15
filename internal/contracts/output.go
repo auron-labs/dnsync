@@ -23,6 +23,12 @@ type Output interface {
 	Delete(context.Context, VisibleRecord) error
 }
 
+// ClosableOutput is implemented by outputs that hold remote resources, such as
+// API sessions, which the runtime releases when it stops.
+type ClosableOutput interface {
+	Close(context.Context) error
+}
+
 type TunnelInfo struct {
 	ID   string
 	Name string

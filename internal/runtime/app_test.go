@@ -898,6 +898,46 @@ func TestAppRunExecutesStartupReconcileBeforeCancellation(t *testing.T) {
 	}
 }
 
+type closableOutputStub struct {
+	*startupOutputStub
+	closeErrs chan error
+}
+
+func (o closableOutputStub) Close(ctx context.Context) error {
+	o.closeErrs <- ctx.Err()
+	return nil
+}
+
+func TestAppRunClosesOutputsAfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	cfg := testRuntimeConfig(filepath.Join(t.TempDir(), "state.json"))
+	ctx, cancel := context.WithCancel(context.Background())
+	source := &startupSourceStub{
+		provider:      contracts.ProviderRef{Type: "docker", Name: "local"},
+		onListDesired: cancel,
+	}
+	output := closableOutputStub{
+		startupOutputStub: &startupOutputStub{provider: contracts.ProviderRef{Type: "adguard", Name: "primary"}},
+		closeErrs:         make(chan error, 1),
+	}
+
+	app := New(cfg)
+	app.registry = testRegistry(stubSourceFactory{source: source}, stubOutputFactory{output: output})
+	if err := app.Run(ctx); err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	select {
+	case err := <-output.closeErrs:
+		if err != nil {
+			t.Fatalf("expected Close to receive a live context after cancellation, got %v", err)
+		}
+	default:
+		t.Fatal("expected Run to close the output on shutdown")
+	}
+}
+
 func TestAppRunRuntimeReconcilesAfterWatchHint(t *testing.T) {
 	t.Parallel()
 

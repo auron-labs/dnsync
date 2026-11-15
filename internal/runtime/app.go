@@ -68,6 +68,7 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer closeOutputs(ctx, outputs, deps)
 
 	a.cfg = resolved
 	a.deps = deps
@@ -90,6 +91,23 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// closeOutputs runs on shutdown, usually after ctx is cancelled, so it detaches
+// from ctx and bounds the whole close by one operation timeout.
+func closeOutputs(ctx context.Context, outputs []contracts.Output, deps Deps) {
+	ctx, cancel := withOperationTimeout(context.WithoutCancel(ctx), deps.OperationTimeout)
+	defer cancel()
+
+	for _, output := range outputs {
+		closer, ok := output.(contracts.ClosableOutput)
+		if !ok {
+			continue
+		}
+		if err := closer.Close(ctx); err != nil {
+			deps.Logger.Warn("could not close output", "output", providerKey(output.Provider()), "error", err)
+		}
+	}
 }
 
 func (a *App) reconcile(ctx context.Context, reason string) error {
