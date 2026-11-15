@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/getsentry/sentry-go"
 
 	"github.com/auron-labs/dnsync/internal/config"
 )
@@ -109,6 +110,9 @@ func newRuntimeDeps(cfg config.Config, getenv func(string) string, stdout io.Wri
 			_ = logCloser.Close()
 		}
 		return RuntimeDeps{}, errors.New("logging.format must be one of json or text")
+	}
+	if hub := sentry.CurrentHub(); sentryEnabled(hub) {
+		handler = slog.NewMultiHandler(handler, sentryHandler{hub: hub})
 	}
 	handler = newRedactingHandler(handler, configSecrets(cfg))
 

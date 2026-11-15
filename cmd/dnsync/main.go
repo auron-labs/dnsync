@@ -8,6 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/auron-labs/dnsync/internal/config"
 	"github.com/auron-labs/dnsync/internal/runtime"
@@ -21,11 +24,36 @@ var newApp = func(cfg config.Config) appRunner {
 	return runtime.New(cfg)
 }
 
+// version is set by GoReleaser's default ldflags.
+var version string
+
+const sentryFlushTimeout = 2 * time.Second
+
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+	os.Exit(runMain())
+}
+
+func runMain() int {
+	// With SENTRY_DSN unset the SDK is a no-op. DSN and environment come from
+	// SENTRY_DSN and SENTRY_ENVIRONMENT; PII collection is off by default.
+	if err := sentry.Init(sentry.ClientOptions{Release: version}); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "warning: sentry disabled: %v\n", err)
 	}
+	defer sentry.Flush(sentryFlushTimeout)
+	defer func() {
+		if r := recover(); r != nil {
+			sentry.CurrentHub().Recover(r)
+			sentry.Flush(sentryFlushTimeout)
+			panic(r)
+		}
+	}()
+
+	if err := run(os.Args[1:]); err != nil {
+		sentry.CaptureException(err)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func run(args []string) error {

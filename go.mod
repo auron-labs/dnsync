@@ -9,6 +9,7 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/cloudflare/cloudflare-go/v7 v7.15.0
 	github.com/containerd/errdefs v1.0.0
+	github.com/getsentry/sentry-go v0.50.0
 	github.com/moby/moby/api v1.57.0
 	github.com/moby/moby/client v0.6.3
 )
@@ -37,4 +38,5 @@ require (
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 )

@@ -55,6 +55,10 @@ Account Tunnel write permissions. The Docker socket (or proxy) additionally
 needs container, image, and network write access so the daemon can manage the
 connector sidecar. Never grant or document real tokens inline.
 
+### Error reporting
+
+Set `SENTRY_DSN` to report errors to Sentry. Error-level log records and fatal startup or runtime errors are sent after secret redaction; info and debug logs are not. Leave it unset to disable reporting. `SENTRY_ENVIRONMENT` optionally sets the environment name.
+
 ## Development
 
 ```bash
@@ -88,7 +92,7 @@ See [docs/development.md](docs/development.md) for repository layout and CI deta
 1. Build the binary with `mise exec -- go build -o bin/dnsync ./cmd/dnsync`.
 2. Install the binary to `/usr/local/bin/dnsync`.
 3. Copy `testdata/config/example.toml` to `/etc/dnsync/config.toml` for a local Docker socket source, or start from `testdata/config/socket-proxy.toml` if Docker is reachable through a proxy or remote endpoint. Keep a writable state path such as `/var/lib/dnsync/state.json`.
-4. Create an environment file at `/etc/dnsync/dnsync.env` with `ADGUARD_PASSWORD=...`.
+4. Create an environment file at `/etc/dnsync/dnsync.env` with `ADGUARD_PASSWORD=...` (and optionally `SENTRY_DSN=...`).
 5. Install `deploy/systemd/dnsync.service` to `/etc/systemd/system/dnsync.service`.
 6. Run `sudo systemctl daemon-reload && sudo systemctl enable --now dnsync.service`.
 

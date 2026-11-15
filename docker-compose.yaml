@@ -9,6 +9,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       ADGUARD_PASSWORD: ${ADGUARD_PASSWORD:?set ADGUARD_PASSWORD in your shell or .env}
+      # SENTRY_DSN: ${SENTRY_DSN}
     command:
       - -config
       - /etc/dnsync/config.toml
