@@ -49,7 +49,7 @@ Startup is strict about unknown TOML keys. Misspelled fields, extra sections, an
 
 | Key | Required | Notes |
 | --- | --- | --- |
-| `type` | yes | Supported values in the default registry: `adguard`, `cloudflare`, `pihole`, `telltaledns`. |
+| `type` | yes | Supported values in the default registry: `adguard`, `cloudflare`, `pihole`, `technitium`, `telltaledns`. |
 | `name` | yes | Human-readable provider name used in logs and state. |
 | `enabled` | no | Defaults to `true` when omitted. Set `false` to skip the output. |
 
@@ -80,6 +80,18 @@ Required when `type = "pihole"` and enabled:
 - `password_ref`, which must use the `ENV:` prefix, for example `ENV:PIHOLE_PASSWORD`. An inline `password` is rejected.
 
 dnsync requires Pi-hole v6 or later. Use the web interface password, or an app password if two-factor authentication is enabled. An app password can change local DNS records only when Pi-hole's `webserver.api.app_sudo` setting is `true`.
+
+### Technitium output
+
+Required when `type = "technitium"` and enabled:
+
+- `url`, the Technitium web service base URL, for example `http://technitium:5380`
+- `zone`, the name of an existing authoritative zone, for example `home.arpa`
+- exactly one of `api_token` or `api_token_ref`
+
+dnsync does not create the zone; reconciles for this output fail until it exists. Every record it manages must fall inside the zone, so set the source's `base_domain` to the zone or a name under it. To manage several zones, configure one output per zone and route records with `proxy.dns`.
+
+The token is a Technitium API token whose user can view, modify, and delete records in the zone. `api_token_ref` must use the `ENV:` prefix, for example `ENV:TECHNITIUM_API_TOKEN`.
 
 ### Cloudflare output
 
@@ -170,7 +182,7 @@ These values control bounded backoff during reconcile and watch-reconnect recove
 Docker sources interpret these labels:
 
 - `proxy.exclude=true` disables the container.
-- `proxy.dns` controls DNS participation: unset or `true` applies to every configured output, `false` opts the container out of DNS, and a value like `adguard`, `cloudflare`, `pihole`, or `telltaledns` limits the record to that output type.
+- `proxy.dns` controls DNS participation: unset or `true` applies to every configured output, `false` opts the container out of DNS, and a value like `adguard`, `cloudflare`, `pihole`, `technitium`, or `telltaledns` limits the record to that output type.
 - `proxy.aliases` is a comma-separated alias list.
 - `proxy.<alias>.port` defines a named alias.
 - `proxy.#<n>.port` and `proxy.*.port` provide indexed and wildcard ports.

@@ -23,39 +23,33 @@ func ResolveSecrets(cfg Config, lookup LookupEnvFunc) (Config, error) {
 			continue
 		}
 
-		ref := strings.TrimSpace(resolved.Outputs[i].PasswordRef)
-		if ref != "" {
+		output := &resolved.Outputs[i]
+		for _, secret := range []struct {
+			field      string
+			ref, value *string
+		}{
+			{field: "password_ref", ref: &output.PasswordRef, value: &output.Password},
+			{field: "api_key_ref", ref: &output.APIKeyRef, value: &output.APIKey},
+			{field: "api_token_ref", ref: &output.APITokenRef, value: &output.APIToken},
+		} {
+			ref := strings.TrimSpace(*secret.ref)
+			if ref == "" {
+				continue
+			}
+
 			name, err := parseEnvRef(ref)
 			if err != nil {
-				return Config{}, fmt.Errorf("outputs[%d].password_ref: %w", i, err)
+				return Config{}, fmt.Errorf("outputs[%d].%s: %w", i, secret.field, err)
 			}
 
 			value, ok := lookup(name)
 			if !ok || strings.TrimSpace(value) == "" {
-				return Config{}, fmt.Errorf("outputs[%d].password_ref references an unset environment variable", i)
+				return Config{}, fmt.Errorf("outputs[%d].%s references an unset environment variable", i, secret.field)
 			}
 
-			resolved.Outputs[i].Password = value
-			resolved.Outputs[i].PasswordRef = ""
+			*secret.value = value
+			*secret.ref = ""
 		}
-
-		ref = strings.TrimSpace(resolved.Outputs[i].APIKeyRef)
-		if ref == "" {
-			continue
-		}
-
-		name, err := parseEnvRef(ref)
-		if err != nil {
-			return Config{}, fmt.Errorf("outputs[%d].api_key_ref: %w", i, err)
-		}
-
-		value, ok := lookup(name)
-		if !ok || strings.TrimSpace(value) == "" {
-			return Config{}, fmt.Errorf("outputs[%d].api_key_ref references an unset environment variable", i)
-		}
-
-		resolved.Outputs[i].APIKey = value
-		resolved.Outputs[i].APIKeyRef = ""
 	}
 
 	return resolved, nil

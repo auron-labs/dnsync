@@ -64,6 +64,21 @@ Pi-hole refuses API changes to `dns.hosts` or `dns.cnameRecords` while they are 
 
 Entries carry no provenance, so like AdGuard, dnsync only changes entries backed by its own state and leaves manual entries alone. When labels stop producing a record, dnsync keeps the entry and logs a blocked-cleanup warning instead of deleting it; remove it in Pi-hole if it is no longer needed. Network failures and `408`, `429` (including exhausted API seats), and `5xx` responses are retryable.
 
+## Technitium DNS Server output
+
+The Technitium provider manages records in one authoritative zone through the HTTP API, sending form-encoded `POST` requests with the API token in the `Authorization: Bearer` header.
+
+- List: `/api/zones/records/get` with `listZone=true`
+- Add: `/api/zones/records/add`
+- Update: `/api/zones/records/update`
+- Delete: `/api/zones/records/delete`
+
+Answers that parse as IPv4 or IPv6 addresses become `A` or `AAAA` records; anything else becomes a `CNAME`. Other record types in the zone are never changed. Created records use Technitium's default TTL. An update keeps the record's TTL, disabled state, expiry, and comments; a change between record types deletes the old record and adds a new one. Deleting an `A` or `AAAA` record also removes a matching `PTR` record from a primary reverse zone, which is Technitium's own behavior.
+
+Records have no stable ID, so ownership comes from daemon state alone. Stale cleanup is blocked while the record is still visible: dnsync keeps the state entry and logs `blocked managed record cleanup without provenance` instead of deleting it. dnsync stamps every record it creates with the comment `dnsync:managed-by=<installation UUID>`. Before updating or deleting a record, it confirms the comment is still present and otherwise fails the operation and leaves the record unchanged. This protects a manual record that replaced a daemon-created one. Keep the comment when editing a managed record in the Technitium console.
+
+Technitium resolves a missing zone to its closest parent zone, so listing fails when the zone Technitium returns differs from the configured `zone`. API failures, including invalid tokens, arrive as HTTP `200` with a non-`ok` status and are not retried. Temporary statuses treated as retryable include `408`, `429`, and `5xx` responses, along with connection failures.
+
 ## Cloudflare output
 
 The Cloudflare provider uses an API token and a zone ID.
@@ -82,4 +97,5 @@ This repository's source tree is the best reference for supported behavior:
 - `internal/providers/adguard/*`
 - `internal/providers/telltaledns/*`
 - `internal/providers/pihole/*`
+- `internal/providers/technitium/*`
 - `internal/providers/cloudflare/*`

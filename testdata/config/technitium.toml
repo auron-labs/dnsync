@@ -1,0 +1,25 @@
+[[sources]]
+type = "docker"
+name = "local-docker"
+endpoint = "unix:///var/run/docker.sock"
+base_domain = "home.arpa"
+host_ip = "192.168.1.50"
+
+[[outputs]]
+type = "technitium"
+name = "primary-technitium"
+url = "http://technitium:5380"
+zone = "home.arpa"
+api_token_ref = "ENV:TECHNITIUM_API_TOKEN"
+
+[state]
+path = "./state/ownership.json"
+
+[logging]
+level = "info"
+format = "json"
+
+[retry]
+initial_interval = "1s"
+max_interval = "30s"
+max_elapsed_time = "5m"

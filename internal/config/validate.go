@@ -125,6 +125,23 @@ func Validate(cfg Config) error {
 			if strings.TrimSpace(output.PasswordRef) == "" {
 				return fmt.Errorf("outputs[%d].password_ref is required", i)
 			}
+		case "technitium":
+			if strings.TrimSpace(output.URL) == "" {
+				return fmt.Errorf("outputs[%d].url is required", i)
+			}
+
+			if strings.TrimSpace(output.Zone) == "" {
+				return fmt.Errorf("outputs[%d].zone is required", i)
+			}
+			if !isValidDomainName(normalizeDomainName(output.Zone)) {
+				return fmt.Errorf("outputs[%d].zone must be a valid domain name", i)
+			}
+
+			hasAPIToken := strings.TrimSpace(output.APIToken) != ""
+			hasAPITokenRef := strings.TrimSpace(output.APITokenRef) != ""
+			if hasAPIToken == hasAPITokenRef {
+				return fmt.Errorf("outputs[%d] must set exactly one of api_token or api_token_ref", i)
+			}
 		default:
 			if output.Tunnel != nil {
 				return fmt.Errorf("outputs[%d].tunnel is only supported for cloudflare outputs", i)

@@ -33,6 +33,15 @@ password_ref = "ENV:ADGUARD_PASSWORD"
 # url = "http://pihole"
 # password_ref = "ENV:PIHOLE_PASSWORD"
 
+# Optional: Technitium DNS Server. The zone must already exist, and the token
+# needs Modify and Delete permission on it.
+# [[outputs]]
+# type = "technitium"
+# name = "primary-technitium"
+# url = "http://technitium:5380"
+# zone = "bar.bz"
+# api_token_ref = "ENV:TECHNITIUM_API_TOKEN"
+
 # Optional: enable one dedicated Cloudflare Tunnel output. The source name must
 # match exactly one [[sources]] entry of type "docker".
 # [[outputs]]

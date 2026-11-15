@@ -29,8 +29,11 @@ type OutputConfig struct {
 	Password    string        `toml:"password"`
 	PasswordRef string        `toml:"password_ref"`
 	ZoneID      string        `toml:"zone_id"`
+	Zone        string        `toml:"zone"`
 	APIKey      string        `toml:"api_key"`
 	APIKeyRef   string        `toml:"api_key_ref"`
+	APIToken    string        `toml:"api_token"`
+	APITokenRef string        `toml:"api_token_ref"`
 	Tunnel      *TunnelConfig `toml:"tunnel"`
 }
 

@@ -187,6 +187,27 @@ func TestValidateRuntimeAndCredentialFields(t *testing.T) {
 			wantErr: "outputs[1].password must not be set inline; use password_ref",
 		},
 		{
+			name: "enabled technitium output requires zone",
+			mutate: func(cfg *Config) {
+				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "technitium", Name: "primary-technitium", URL: "http://technitium:5380", APIToken: "token"})
+			},
+			wantErr: "outputs[1].zone is required",
+		},
+		{
+			name: "enabled technitium output requires a valid zone name",
+			mutate: func(cfg *Config) {
+				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "technitium", Name: "primary-technitium", URL: "http://technitium:5380", Zone: "home arpa", APIToken: "token"})
+			},
+			wantErr: "outputs[1].zone must be a valid domain name",
+		},
+		{
+			name: "enabled technitium output requires exactly one api token source",
+			mutate: func(cfg *Config) {
+				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "technitium", Name: "primary-technitium", URL: "http://technitium:5380", Zone: "home.arpa", APIToken: "token", APITokenRef: "ENV:TECHNITIUM_API_TOKEN"})
+			},
+			wantErr: "outputs[1] must set exactly one of api_token or api_token_ref",
+		},
+		{
 			name: "enabled cloudflare output requires zone id",
 			mutate: func(cfg *Config) {
 				cfg.Outputs = append(cfg.Outputs, OutputConfig{Type: "cloudflare", Name: "primary-cloudflare", APIKey: "secret-token"})
@@ -270,6 +291,33 @@ func TestResolveSecrets(t *testing.T) {
 
 	if resolved.Outputs[1].APIKeyRef != "" {
 		t.Fatalf("expected api_key_ref to be cleared after resolution, got %q", resolved.Outputs[1].APIKeyRef)
+	}
+
+	technitiumCfg := validConfig()
+	technitiumCfg.Outputs = append(technitiumCfg.Outputs, OutputConfig{
+		Type:        "technitium",
+		Name:        "primary-technitium",
+		URL:         "http://technitium:5380",
+		Zone:        "home.arpa",
+		APITokenRef: "ENV:TECHNITIUM_API_TOKEN",
+	})
+
+	resolved, err = ResolveSecrets(technitiumCfg, func(name string) (string, bool) {
+		return "technitium-secret", name == "TECHNITIUM_API_TOKEN"
+	})
+	if err != nil {
+		t.Fatalf("expected technitium env-backed secret to resolve, got %v", err)
+	}
+
+	if resolved.Outputs[1].APIToken != "technitium-secret" || resolved.Outputs[1].APITokenRef != "" {
+		t.Fatalf("expected resolved api token with cleared ref, got token %q ref %q", resolved.Outputs[1].APIToken, resolved.Outputs[1].APITokenRef)
+	}
+
+	_, err = ResolveSecrets(technitiumCfg, func(string) (string, bool) {
+		return "", false
+	})
+	if err == nil || !strings.Contains(err.Error(), "outputs[1].api_token_ref references an unset environment variable") {
+		t.Fatalf("expected unset api_token_ref error, got %v", err)
 	}
 
 	_, err = ResolveSecrets(cfg, func(string) (string, bool) {

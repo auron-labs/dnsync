@@ -11,6 +11,7 @@ import (
 	cloudflareprovider "github.com/auron-labs/dnsync/internal/providers/cloudflare"
 	dockerprovider "github.com/auron-labs/dnsync/internal/providers/docker"
 	piholeprovider "github.com/auron-labs/dnsync/internal/providers/pihole"
+	technitiumprovider "github.com/auron-labs/dnsync/internal/providers/technitium"
 	telltalednsprovider "github.com/auron-labs/dnsync/internal/providers/telltaledns"
 )
 
@@ -46,6 +47,9 @@ func NewDefaultFactoryRegistry() *FactoryRegistry {
 	}))
 	mustRegister(registry.RegisterOutput("pihole", func(cfg config.OutputConfig, _ Deps) (contracts.Output, error) {
 		return piholeprovider.New(cfg), nil
+	}))
+	mustRegister(registry.RegisterOutput("technitium", func(cfg config.OutputConfig, deps Deps) (contracts.Output, error) {
+		return technitiumprovider.New(cfg, deps.InstallationID)
 	}))
 	return registry
 }

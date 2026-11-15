@@ -11,6 +11,7 @@ import (
 	cloudflareprovider "github.com/auron-labs/dnsync/internal/providers/cloudflare"
 	dockerprovider "github.com/auron-labs/dnsync/internal/providers/docker"
 	piholeprovider "github.com/auron-labs/dnsync/internal/providers/pihole"
+	technitiumprovider "github.com/auron-labs/dnsync/internal/providers/technitium"
 	telltalednsprovider "github.com/auron-labs/dnsync/internal/providers/telltaledns"
 )
 
@@ -123,6 +124,22 @@ func TestFactoryRegistryBuildsClosablePiholeOutput(t *testing.T) {
 	}
 	if _, ok := outputs[0].(contracts.ClosableOutput); !ok {
 		t.Fatalf("expected pihole provider to release its session on shutdown, got %T", outputs[0])
+	}
+}
+
+func TestFactoryRegistryBuildsTechnitiumOutput(t *testing.T) {
+	t.Parallel()
+
+	cfg := validRuntimeConfig("unix:///var/run/docker.sock")
+	cfg.Outputs = []config.OutputConfig{{Type: "technitium", Name: "primary", URL: "http://technitium:5380", Zone: "home.arpa", APIToken: "token"}}
+
+	outputs, err := NewDefaultFactoryRegistry().BuildOutputs(cfg, Deps{InstallationID: "123e4567-e89b-42d3-a456-426614174000"})
+	if err != nil {
+		t.Fatalf("build outputs: %v", err)
+	}
+
+	if _, ok := outputs[0].(*technitiumprovider.Provider); !ok {
+		t.Fatalf("expected technitium provider, got %T", outputs[0])
 	}
 }
 
