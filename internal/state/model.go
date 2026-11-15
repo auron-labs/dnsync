@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/contracts"
 )
 
 const SnapshotVersion = 3

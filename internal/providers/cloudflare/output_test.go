@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/aaronflorey/dnsync/internal/config"
-	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/config"
+	"github.com/auron-labs/dnsync/internal/contracts"
 	cloudflareapi "github.com/cloudflare/cloudflare-go/v7"
 	"github.com/cloudflare/cloudflare-go/v7/option"
 )

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/contracts"
 	containertypes "github.com/moby/moby/api/types/container"
 )
 

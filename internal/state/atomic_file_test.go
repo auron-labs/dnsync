@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/contracts"
 )
 
 func TestAtomicWriteReplacesStateFile(t *testing.T) {

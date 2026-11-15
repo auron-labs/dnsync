@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/aaronflorey/dnsync/internal/config"
-	"github.com/aaronflorey/dnsync/internal/runtime"
+	"github.com/auron-labs/dnsync/internal/config"
+	"github.com/auron-labs/dnsync/internal/runtime"
 )
 
 type appRunner interface {

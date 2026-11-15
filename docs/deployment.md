@@ -23,7 +23,7 @@ The sample unit reads `/etc/dnsync/dnsync.env` and starts the binary with `-conf
 docker compose up -d
 ```
 
-The image defaults to `ghcr.io/aaronflorey/dnsync:latest` unless `DNSYNC_IMAGE` is set.
+The image defaults to `ghcr.io/auron-labs/dnsync:latest` unless `DNSYNC_IMAGE` is set.
 
 ### Dockerfile
 

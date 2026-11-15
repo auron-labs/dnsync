@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/contracts"
 	cerrdefs "github.com/containerd/errdefs"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -19,11 +19,11 @@ import (
 // Label keys and the container name prefix identify sidecars created by earlier
 // releases; changing them orphans existing managed sidecars.
 const (
-	sidecarManagedLabel = "com.aaronflorey.docker-dns-sync.managed"
-	sidecarOutputLabel  = "com.aaronflorey.docker-dns-sync.output"
-	sidecarSourceLabel  = "com.aaronflorey.docker-dns-sync.source"
-	sidecarTunnelLabel  = "com.aaronflorey.docker-dns-sync.tunnel-id"
-	sidecarNameLabel    = "com.aaronflorey.docker-dns-sync.tunnel-name"
+	sidecarManagedLabel = "com.auron-labs.dnsync.managed"
+	sidecarOutputLabel  = "com.auron-labs.dnsync.output"
+	sidecarSourceLabel  = "com.auron-labs.dnsync.source"
+	sidecarTunnelLabel  = "com.auron-labs.dnsync.tunnel-id"
+	sidecarNameLabel    = "com.auron-labs.dnsync.tunnel-name"
 )
 
 var errSidecarNotFound = errors.New("tunnel sidecar not found")
@@ -320,7 +320,7 @@ func tunnelSidecarName(output, source contracts.ProviderRef, tunnelName string) 
 	if readable == "" {
 		readable = "tunnel"
 	}
-	return fmt.Sprintf("docker-dns-sync-cloudflared-%s-%x", readable, sum[:5])
+	return fmt.Sprintf("dnsync-cloudflared-%s-%x", readable, sum[:5])
 }
 
 func sanitizeContainerName(value string) string {

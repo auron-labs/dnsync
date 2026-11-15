@@ -2,7 +2,7 @@ name: dnsync
 
 services:
   dnsync:
-    image: ${DNSYNC_IMAGE:-ghcr.io/aaronflorey/dnsync:latest}
+    image: ${DNSYNC_IMAGE:-ghcr.io/auron-labs/dnsync:latest}
     volumes:
       - ./config.example.toml:/etc/dnsync/config.toml:ro
       - ./state:/var/lib/dnsync

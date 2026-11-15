@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronflorey/dnsync/internal/config"
-	"github.com/aaronflorey/dnsync/internal/contracts"
-	"github.com/aaronflorey/dnsync/internal/state"
+	"github.com/auron-labs/dnsync/internal/config"
+	"github.com/auron-labs/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/state"
 )
 
 const shortWatchHintDebounce = 20 * time.Millisecond

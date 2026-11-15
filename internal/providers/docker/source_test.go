@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aaronflorey/dnsync/internal/config"
-	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/config"
+	"github.com/auron-labs/dnsync/internal/contracts"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	mobyclient "github.com/moby/moby/client"

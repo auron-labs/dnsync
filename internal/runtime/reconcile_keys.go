@@ -3,7 +3,7 @@ package runtime
 import (
 	"strings"
 
-	"github.com/aaronflorey/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/contracts"
 )
 
 func normalizeHostname(hostname string) string {

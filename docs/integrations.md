@@ -37,7 +37,7 @@ The Cloudflare provider uses an API token and a zone ID.
 - It lists DNS records for the zone and keeps hostnames as FQDNs in the daemon model.
 - It caches record IDs for update/delete.
 - It creates `A`, `AAAA`, or `CNAME` records based on the target value.
-- It stamps created and updated records with `docker-dns-sync:managed-by=<installation UUID>` and reads that comment during recovery.
+- It stamps created and updated records with `dnsync:managed-by=<installation UUID>` and reads that comment during recovery.
 - It recovers duplicate-create error code `81058` by re-reading visible records.
 
 ## Upstream references

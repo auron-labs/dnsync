@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/auron-labs/dnsync/internal/config"
 )
 
 const (

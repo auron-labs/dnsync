@@ -12,7 +12,7 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 
-	"github.com/aaronflorey/dnsync/internal/config"
+	"github.com/auron-labs/dnsync/internal/config"
 )
 
 const (

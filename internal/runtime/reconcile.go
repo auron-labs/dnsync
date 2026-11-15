@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/aaronflorey/dnsync/internal/contracts"
-	"github.com/aaronflorey/dnsync/internal/state"
+	"github.com/auron-labs/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/state"
 )
 
 type ReconcileInput struct {

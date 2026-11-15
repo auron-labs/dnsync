@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aaronflorey/dnsync/internal/config"
-	"github.com/aaronflorey/dnsync/internal/contracts"
-	adguardprovider "github.com/aaronflorey/dnsync/internal/providers/adguard"
-	adguardstub "github.com/aaronflorey/dnsync/internal/providers/adguardstub"
-	cloudflareprovider "github.com/aaronflorey/dnsync/internal/providers/cloudflare"
-	dockerprovider "github.com/aaronflorey/dnsync/internal/providers/docker"
+	"github.com/auron-labs/dnsync/internal/config"
+	"github.com/auron-labs/dnsync/internal/contracts"
+	adguardprovider "github.com/auron-labs/dnsync/internal/providers/adguard"
+	adguardstub "github.com/auron-labs/dnsync/internal/providers/adguardstub"
+	cloudflareprovider "github.com/auron-labs/dnsync/internal/providers/cloudflare"
+	dockerprovider "github.com/auron-labs/dnsync/internal/providers/docker"
 )
 
 func TestFactoryRegistryExtensibility(t *testing.T) {

@@ -29,7 +29,7 @@ dockers_v2:
       - dnsync
     dockerfile: Dockerfile.release
     images:
-      - "ghcr.io/aaronflorey/dnsync"
+      - "ghcr.io/auron-labs/dnsync"
     tags:
       - "{{ .Version }}"
       - "{{ .Major }}.{{ .Minor }}"
@@ -54,12 +54,12 @@ homebrew_casks:
     binaries:
       - dnsync
     repository:
-      owner: aaronflorey
+      owner: auron-labs
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     url:
-      verified: "github.com/aaronflorey/dnsync/"
-    homepage: https://github.com/aaronflorey/dnsync
+      verified: "github.com/auron-labs/dnsync/"
+    homepage: https://github.com/auron-labs/dnsync
     description: Sync Godoxy-labeled Docker workloads into AdGuard Home rewrites
     hooks:
       post:

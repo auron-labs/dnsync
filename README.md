@@ -1,18 +1,18 @@
 # dnsync
 
-[![License](https://img.shields.io/github/license/aaronflorey/dnsync?style=flat-square)](LICENSE)
-[![CI](https://img.shields.io/github/actions/workflow/status/aaronflorey/dnsync/ci.yaml?branch=main&style=flat-square&label=ci)](https://github.com/aaronflorey/dnsync/actions/workflows/ci.yaml)
-[![Release](https://img.shields.io/github/v/release/aaronflorey/dnsync?display_name=tag&style=flat-square)](https://github.com/aaronflorey/dnsync/releases)
+[![License](https://img.shields.io/github/license/auron-labs/dnsync?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/auron-labs/dnsync/ci.yaml?branch=main&style=flat-square&label=ci)](https://github.com/auron-labs/dnsync/actions/workflows/ci.yaml)
+[![Release](https://img.shields.io/github/v/release/auron-labs/dnsync?display_name=tag&style=flat-square)](https://github.com/auron-labs/dnsync/releases)
 
 `dnsync` is a Go daemon that watches Godoxy-labeled Docker workloads and keeps daemon-owned AdGuard Home and Cloudflare DNS records in sync. An optional label-driven Cloudflare Tunnel lifecycle creates a dedicated remote tunnel and managed `cloudflared` sidecar.
 
 ## Installation
 
-- Install from Homebrew with `brew install --cask aaronflorey/tap/dnsync`.
-- Install the release binary with [`bin`](https://github.com/aaronflorey/bin): `bin install github.com/aaronflorey/dnsync`.
+- Install from Homebrew with `brew install --cask auron-labs/tap/dnsync`.
+- Install the release binary with [`bin`](https://github.com/aaronflorey/bin): `bin install github.com/auron-labs/dnsync`.
 - Download the latest release archive for your platform from GitHub Releases and place `dnsync` on your `PATH`.
 - Build from source with `mise install && mise run build`.
-- Pull the release container image from `ghcr.io/aaronflorey/dnsync:<tag>`.
+- Pull the release container image from `ghcr.io/auron-labs/dnsync:<tag>`.
 
 ## What It Does
 
@@ -80,8 +80,8 @@ See [docs/development.md](docs/development.md) for repository layout and CI deta
 - Merging the release PR creates a `vX.Y.Z` tag and GitHub release.
 - Release publishing uploads macOS and Linux archives plus checksums.
 - The same tagged GoReleaser run publishes multi-arch container images to GHCR.
-- The same tagged GoReleaser run updates the Homebrew cask in `aaronflorey/homebrew-tap`.
-- The release workflow requires a `HOMEBREW_TAP_GITHUB_TOKEN` secret with push access to `aaronflorey/homebrew-tap`.
+- The same tagged GoReleaser run updates the Homebrew cask in `auron-labs/homebrew-tap`.
+- The release workflow requires a `HOMEBREW_TAP_GITHUB_TOKEN` secret with push access to `auron-labs/homebrew-tap`.
 
 ## Host Binary With systemd
 
@@ -101,7 +101,7 @@ Notes:
 
 ## Docker Deployment
 
-1. Pull a release image with `docker pull ghcr.io/aaronflorey/dnsync:<tag>`, or build locally with `docker build -t dnsync .`.
+1. Pull a release image with `docker pull ghcr.io/auron-labs/dnsync:<tag>`, or build locally with `docker build -t dnsync .`.
 2. Use the root `docker-compose.yaml` plus `config.example.toml` for the simplest container deployment, or start from `testdata/config/docker-container.toml` / `testdata/config/socket-proxy.toml` for a custom deployment.
 3. Create a writable host directory for state such as `/opt/dnsync/state`.
 4. Provide the AdGuard password through an environment variable.
@@ -115,7 +115,7 @@ docker run -d \
   -v /opt/dnsync/config.toml:/etc/dnsync/config.toml:ro \
   -v /opt/dnsync/state:/var/lib/dnsync \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/aaronflorey/dnsync:<tag> \
+  ghcr.io/auron-labs/dnsync:<tag> \
   -config /etc/dnsync/config.toml
 ```
 

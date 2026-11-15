@@ -1,4 +1,4 @@
-module github.com/aaronflorey/dnsync
+module github.com/auron-labs/dnsync
 
 go 1.27
 

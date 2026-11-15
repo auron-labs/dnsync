@@ -133,7 +133,7 @@ Use this when you want every flag visible at the command line and you are not
 using Compose for the daemon itself.
 
 ```bash
-docker pull ghcr.io/aaronflorey/dnsync:latest
+docker pull ghcr.io/auron-labs/dnsync:latest
 docker run -d \
   --name dnsync \
   --restart unless-stopped \
@@ -141,7 +141,7 @@ docker run -d \
   -v /opt/dnsync/config.toml:/etc/dnsync/config.toml:ro \
   -v /opt/dnsync/state:/var/lib/dnsync \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/aaronflorey/dnsync:latest \
+  ghcr.io/auron-labs/dnsync:latest \
   -config /etc/dnsync/config.toml
 ```
 

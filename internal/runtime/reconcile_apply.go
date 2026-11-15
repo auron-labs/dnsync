@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/aaronflorey/dnsync/internal/contracts"
-	"github.com/aaronflorey/dnsync/internal/state"
+	"github.com/auron-labs/dnsync/internal/contracts"
+	"github.com/auron-labs/dnsync/internal/state"
 )
 
 func applyReconcilePlan(ctx context.Context, output contracts.Output, owned state.Snapshot, plan reconcilePlan, now time.Time, persist func(state.Snapshot) error) (state.Snapshot, bool, error) {
