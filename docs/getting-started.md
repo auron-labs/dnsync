@@ -22,7 +22,7 @@ sample workload together. See [Verify with the live stack](#verify-with-the-live
 
 ## Prereqs in common
 
-- Go 1.26.3 via `mise.toml` for building from source (skip if you install
+- Go 1.27.4 via `mise.toml` for building from source (skip if you install
   from a release archive or container image).
 - A reachable Docker daemon — local Unix socket, a TCP proxy, or a remote
   endpoint. The daemon speaks `unix://` and `tcp://` only.
@@ -33,7 +33,7 @@ sample workload together. See [Verify with the live stack](#verify-with-the-live
 
 ## Host binary with systemd
 
-1. Install the pinned toolchain (skip if you already have Go 1.26.3):
+1. Install the pinned toolchain (skip if you already have Go 1.27.4):
 
    ```bash
    mise install

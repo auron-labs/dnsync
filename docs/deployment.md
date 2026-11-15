@@ -27,7 +27,7 @@ The image defaults to `ghcr.io/aaronflorey/dnsync:latest` unless `DNSYNC_IMAGE` 
 
 ### Dockerfile
 
-`Dockerfile` builds a static binary on Go 1.26.3 and runs it from `gcr.io/distroless/static-debian12`.
+`Dockerfile` builds a static binary on Go 1.27.4 and runs it from `gcr.io/distroless/static-debian13`.
 
 `Dockerfile.release` is the GoReleaser-only image definition for published multi-arch images. It copies the prebuilt binary from GoReleaser's per-platform build context instead of compiling inside the image build.
 

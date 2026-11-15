@@ -6,14 +6,17 @@
 mise install
 ```
 
-`mise.toml` pins Go 1.26.3, and `go.mod` pins the Go toolchain to `go1.26.3`.
+`mise.toml` pins Go 1.27.4, and `go.mod` pins the Go toolchain to `go1.27.4`.
 
 ## Common local commands
 
 ```bash
-mise exec -- go build -o bin/dnsync ./cmd/dnsync
+mise run setup   # modules and Git hooks
+mise run build
 mise exec -- go vet ./...
-mise exec -- go test ./...
+mise run test
+mise run check   # hk lint and format checks
+mise run fix     # hk automatic fixes
 docker build -t dnsync .
 ```
 
@@ -41,5 +44,5 @@ See `.github/workflows/ci.yaml`.
 
 ## Notes
 
-- There is no separate lint command defined in the repository.
+- Lint and format checks run through `hk` (`mise run check`); configuration lives in `hk.pkl`, `.golangci.yml`, and the other dot-files at the repository root.
 - Keep config examples in sync with `testdata/config/` and `config.example.toml`.

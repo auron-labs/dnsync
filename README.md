@@ -9,8 +9,9 @@
 ## Installation
 
 - Install from Homebrew with `brew install --cask aaronflorey/tap/dnsync`.
+- Install the release binary with [`bin`](https://github.com/aaronflorey/bin): `bin install github.com/aaronflorey/dnsync`.
 - Download the latest release archive for your platform from GitHub Releases and place `dnsync` on your `PATH`.
-- Build from source with `mise install && mise exec -- go build -o bin/dnsync ./cmd/dnsync`.
+- Build from source with `mise install && mise run build`.
 - Pull the release container image from `ghcr.io/aaronflorey/dnsync:<tag>`.
 
 ## What It Does
@@ -56,19 +57,26 @@ connector sidecar. Never grant or document real tokens inline.
 
 ## Development
 
-- Install the pinned Go toolchain with `mise install`.
-- Run static checks with `mise exec -- go vet ./...`.
-- Run unit tests with `mise exec -- go test ./...`.
-- Run opt-in live Docker verification with `mise run live-test`.
-- Live verification requires `docker`, `docker compose`, and `curl`; `dig` is optional because the script falls back to containerized `nslookup`.
-- The live test is not part of the default Docker-free `go test` / `go vet` path and cleans up with `docker compose ... down -v` plus temporary runtime directory removal unless `--keep-running` or `KEEP_RUNNING=1` is used; keep-running mode prints the manual cleanup commands you must run after inspection.
+```bash
+mise install
+mise run setup   # download modules and install the Git hooks
+mise run build   # build bin/dnsync
+mise run test    # unit tests (Docker-free)
+mise run check   # lint and format checks via hk
+mise run fix     # apply automatic fixes
+mise run live-test  # opt-in Docker/AdGuard smoke test
+```
+
+- `mise run live-test` requires `docker`, `docker compose`, and `curl`; `dig` is optional because the script falls back to containerized `nslookup`. It cleans up with `docker compose ... down -v` plus temporary runtime directory removal unless `--keep-running` or `KEEP_RUNNING=1` is used; keep-running mode prints the manual cleanup commands you must run after inspection.
 - Keep secrets out of logs and shell history: use env references, do not paste real credentials inline, and avoid dumping compose logs by default.
 - Stale AdGuard cleanup is state-backed: one exact visible hostname/answer match is deleted after its workload is removed. Because AdGuard exposes no stable rewrite ID, do not manually replace a daemon-managed rewrite with the same values if you need it preserved.
 - Renovate is configured through `renovate.json` for Go modules, GitHub Actions, and container image references.
 
+See [docs/development.md](docs/development.md) for repository layout and CI details.
+
 ## Release Automation
 
-- Pushes to `main` and `master` run CI and update the release-please PR.
+- Pushes to `main` run CI and update the release-please PR.
 - Merging the release PR creates a `vX.Y.Z` tag and GitHub release.
 - Release publishing uploads macOS and Linux archives plus checksums.
 - The same tagged GoReleaser run publishes multi-arch container images to GHCR.
@@ -134,8 +142,8 @@ Notes:
 
 ## Contributing
 
-See `CONTRIBUTING.md` for local setup and pull request expectations.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and pull request expectations. Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
-Released under the MIT License. See `LICENSE`.
+Released under the MIT License. See [LICENSE](LICENSE).

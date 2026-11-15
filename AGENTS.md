@@ -23,6 +23,7 @@
 | Run one test | `mise exec -- go test ./internal/runtime -run TestName` | Focused debugging |
 | Static checks | `mise exec -- go vet ./...` | Matches CI before handoff |
 | Format Go files | `mise exec -- gofmt -w <files>` | After editing Go |
+| Lint and format | `mise run check` / `mise run fix` | hk baseline (`hk.pkl`); before handoff when tooling-covered files changed |
 | Build binary | `mise exec -- go build -o bin/dnsync ./cmd/dnsync` | CLI or release-impacting changes |
 | Live smoke test | `mise run live-test` | Docker/AdGuard/reconcile integration changes |
 | Keep live stack | `mise run live-test -- --keep-running` | Only when inspecting the live harness |
@@ -33,7 +34,7 @@ CI also runs GoReleaser config validation via `goreleaser check`; run it locally
 ## Workflow
 
 - Existing repo instructions require starting edits through a GSD command when available: `/gsd-quick` for small changes, `/gsd-debug` for bug investigations, `/gsd-execute-phase` for planned phase work.
-- Prefer `mise exec -- ...` for Go tool commands so the pinned `go1.26.3` toolchain is used.
+- Prefer `mise exec -- ...` for Go tool commands so the pinned `go1.27.4` toolchain is used.
 - Use the smallest relevant package test first, then `go vet ./...` and `go test ./...` before final handoff when code changed.
 
 ## Architecture Notes
