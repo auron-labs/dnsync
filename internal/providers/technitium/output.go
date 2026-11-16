@@ -23,17 +23,18 @@ const ownershipCommentPrefix = "dnsync:managed-by="
 // Provider manages A, AAAA, and CNAME records in one Technitium DNS Server
 // authoritative zone through /api/zones/records/*.
 //
-// Records have no stable ID, so visible records carry no provenance and
-// ownership comes from daemon state alone. Created records are stamped with an
-// installation comment, and updates and deletes refuse records that lack it so
-// a manual record that replaced a daemon-created one is left alone.
+// Records have no stable ID, so provenance identifies a record by its type,
+// name, and value, and takes the installation from the ownership comment
+// stamped on created records. Updates and deletes also refuse records without
+// this installation's comment, so a manual record that replaced a
+// daemon-created one is left alone.
 type Provider struct {
-	ref     contracts.ProviderRef
-	baseURL string
-	zone    string
-	token   string
-	marker  string
-	client  *http.Client
+	ref            contracts.ProviderRef
+	baseURL        string
+	zone           string
+	token          string
+	installationID string
+	client         *http.Client
 }
 
 func New(cfg config.OutputConfig, installationID string) (*Provider, error) {
@@ -43,12 +44,12 @@ func New(cfg config.OutputConfig, installationID string) (*Provider, error) {
 	}
 
 	return &Provider{
-		ref:     contracts.ProviderRef{Type: cfg.Type, Name: cfg.Name},
-		baseURL: cfg.URL,
-		zone:    trimName(cfg.Zone),
-		token:   cfg.APIToken,
-		marker:  ownershipCommentPrefix + installationID,
-		client:  http.DefaultClient,
+		ref:            contracts.ProviderRef{Type: cfg.Type, Name: cfg.Name},
+		baseURL:        cfg.URL,
+		zone:           trimName(cfg.Zone),
+		token:          cfg.APIToken,
+		installationID: installationID,
+		client:         http.DefaultClient,
 	}, nil
 }
 
@@ -72,6 +73,10 @@ func (p *Provider) ListVisible(ctx context.Context) ([]contracts.VisibleRecord, 
 			Output:   p.ref,
 			Hostname: strings.TrimSpace(record.Name),
 			Answer:   answer,
+			Provenance: &contracts.RecordProvenance{
+				RemoteID:       recordID(record.Name, answer),
+				InstallationID: installationIDFromComment(record.Comments),
+			},
 		})
 	}
 
@@ -81,8 +86,11 @@ func (p *Provider) ListVisible(ctx context.Context) ([]contracts.VisibleRecord, 
 func (p *Provider) Create(ctx context.Context, desired contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
 	form := recordForm(desired.Hostname, desired.Answer)
 	form.Set("zone", p.zone)
-	form.Set("comments", p.marker)
-	return nil, p.call(ctx, "/api/zones/records/add", form, nil)
+	form.Set("comments", ownershipCommentPrefix+p.installationID)
+	if err := p.call(ctx, "/api/zones/records/add", form, nil); err != nil {
+		return nil, err
+	}
+	return p.provenance(desired), nil
 }
 
 func (p *Provider) Update(ctx context.Context, visible contracts.VisibleRecord, desired contracts.DesiredRecord) (*contracts.RecordProvenance, error) {
@@ -115,7 +123,10 @@ func (p *Provider) Update(ctx context.Context, visible contracts.VisibleRecord, 
 	form.Set("comments", current.Comments)
 	form.Set("expiryTtl", strconv.FormatUint(uint64(current.ExpiryTTL), 10))
 
-	return nil, p.call(ctx, "/api/zones/records/update", form, nil)
+	if err := p.call(ctx, "/api/zones/records/update", form, nil); err != nil {
+		return nil, err
+	}
+	return p.provenance(desired), nil
 }
 
 func (p *Provider) Delete(ctx context.Context, visible contracts.VisibleRecord) error {
@@ -189,6 +200,33 @@ func recordForm(hostname, answer string) url.Values {
 	return form
 }
 
+// recordID identifies a record by its type, name, and value, the same fields
+// Technitium uses to select records. It changes whenever the record does.
+// Persisted in daemon state; changing the format orphans existing ownership.
+func recordID(hostname, answer string) string {
+	form := recordForm(hostname, answer)
+	value := form.Get("cname")
+	if addr, err := netip.ParseAddr(form.Get("ipAddress")); err == nil {
+		value = addr.String()
+	}
+	return strings.ToLower(form.Get("type") + " " + form.Get("domain") + " " + value)
+}
+
+func (p *Provider) provenance(desired contracts.DesiredRecord) *contracts.RecordProvenance {
+	return &contracts.RecordProvenance{RemoteID: recordID(desired.Hostname, desired.Answer), InstallationID: p.installationID}
+}
+
+// installationIDFromComment finds the ownership marker anywhere in a record's
+// comments, which operators may extend with their own notes.
+func installationIDFromComment(comments string) string {
+	for _, field := range strings.Fields(comments) {
+		if id, ok := strings.CutPrefix(field, ownershipCommentPrefix); ok {
+			return id
+		}
+	}
+	return ""
+}
+
 func trimName(name string) string {
 	return strings.TrimSuffix(strings.TrimSpace(name), ".")
 }
@@ -230,8 +268,8 @@ func (p *Provider) ownedRecord(ctx context.Context, visible contracts.VisibleRec
 		if !ok || !sameDNSName(candidate.Name, visible.Hostname) || !sameDNSName(answer, visible.Answer) {
 			continue
 		}
-		if !strings.Contains(candidate.Comments, p.marker) {
-			return record{}, fmt.Errorf("technitium %s record %s -> %s has no %q comment; leaving it unchanged", candidate.Type, candidate.Name, answer, p.marker)
+		if !strings.EqualFold(installationIDFromComment(candidate.Comments), p.installationID) {
+			return record{}, fmt.Errorf("technitium %s record %s -> %s has no %q comment; leaving it unchanged", candidate.Type, candidate.Name, answer, ownershipCommentPrefix+p.installationID)
 		}
 		return candidate, nil
 	}

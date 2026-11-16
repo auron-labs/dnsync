@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,8 +88,8 @@ func (f *fakeServer) handle(path string, form map[string][]string) (any, error) 
 		}
 		return map[string]any{"zone": map[string]string{"name": zone}, "records": matched}, nil
 	case "/api/zones/records/add":
-		added := record{Name: get("domain"), Type: get("type"), TTL: 3600, Comments: get("comments")}
-		added.RData.IPAddress, added.RData.CNAME = get("ipAddress"), get("cname")
+		added := record{Name: stored(get("domain")), Type: get("type"), TTL: 3600, Comments: get("comments")}
+		added.RData.IPAddress, added.RData.CNAME = stored(get("ipAddress")), stored(get("cname"))
 		if _, ok := f.find(added.Name, added.Type, added.RData.IPAddress); ok {
 			return nil, errors.New("record already exists")
 		}
@@ -102,12 +103,12 @@ func (f *fakeServer) handle(path string, form map[string][]string) (any, error) 
 		updated := &f.records[i]
 		ttl, _ := strconv.ParseUint(get("ttl"), 10, 32)
 		expiry, _ := strconv.ParseUint(get("expiryTtl"), 10, 32)
-		updated.Name, updated.TTL, updated.ExpiryTTL = get("newDomain"), uint32(ttl), uint32(expiry)
+		updated.Name, updated.TTL, updated.ExpiryTTL = stored(get("newDomain")), uint32(ttl), uint32(expiry)
 		updated.Disabled, updated.Comments = get("disable") == "true", get("comments")
 		if updated.isAddress() {
-			updated.RData.IPAddress = get("newIpAddress")
+			updated.RData.IPAddress = stored(get("newIpAddress"))
 		} else {
-			updated.RData.CNAME = get("cname")
+			updated.RData.CNAME = stored(get("cname"))
 		}
 		return map[string]any{}, nil
 	case "/api/zones/records/delete":
@@ -119,6 +120,15 @@ func (f *fakeServer) handle(path string, form map[string][]string) (any, error) 
 		return map[string]any{}, nil
 	}
 	return nil, errors.New("unexpected path " + path)
+}
+
+// stored returns a name or address in the normalized form Technitium lists
+// back, which need not match what the provider sent.
+func stored(value string) string {
+	if addr, err := netip.ParseAddr(value); err == nil {
+		return addr.String()
+	}
+	return strings.ToLower(value)
 }
 
 func (f *fakeServer) find(name, recordType, ipAddress string) (int, bool) {
@@ -147,8 +157,9 @@ func TestListVisibleReturnsManagedRecordTypesInZone(t *testing.T) {
 		record{Name: "home.arpa", Type: "SOA"},
 		newRecord("app.home.arpa", "A", "10.0.0.10", ""),
 		newRecord("app.home.arpa", "TXT", "", ""),
-		newRecord("v6.home.arpa", "AAAA", "fd00::1", testMarker),
+		newRecord("v6.home.arpa", "AAAA", "fd00::1", "media server "+testMarker),
 		newRecord("alias.home.arpa", "CNAME", "app.home.arpa", testMarker),
+		newRecord("other.home.arpa", "A", "10.0.0.51", ownershipCommentPrefix+"another-installation"),
 	)
 
 	visible, err := provider.ListVisible(context.Background())
@@ -156,17 +167,24 @@ func TestListVisibleReturnsManagedRecordTypesInZone(t *testing.T) {
 		t.Fatalf("ListVisible returned error: %v", err)
 	}
 
-	want := []contracts.VisibleRecord{
-		{Output: provider.Provider(), Hostname: "app.home.arpa", Answer: "10.0.0.10"},
-		{Output: provider.Provider(), Hostname: "v6.home.arpa", Answer: "fd00::1"},
-		{Output: provider.Provider(), Hostname: "alias.home.arpa", Answer: "app.home.arpa"},
+	want := []struct {
+		hostname, answer, installationID string
+	}{
+		{"app.home.arpa", "10.0.0.10", ""},
+		{"v6.home.arpa", "fd00::1", testInstallationID},
+		{"alias.home.arpa", "app.home.arpa", testInstallationID},
+		{"other.home.arpa", "10.0.0.51", "another-installation"},
 	}
 	if len(visible) != len(want) {
 		t.Fatalf("unexpected visible records: %+v", visible)
 	}
-	for i := range want {
-		if visible[i] != want[i] {
-			t.Fatalf("visible[%d] = %+v, want %+v", i, visible[i], want[i])
+	for i, w := range want {
+		got := visible[i]
+		if got.Output != provider.Provider() || got.Hostname != w.hostname || got.Answer != w.answer {
+			t.Fatalf("visible[%d] = %+v, want %s -> %s", i, got, w.hostname, w.answer)
+		}
+		if got.Provenance == nil || got.Provenance.RemoteID == "" || got.Provenance.InstallationID != w.installationID {
+			t.Fatalf("visible[%d] provenance = %+v, want installation %q", i, got.Provenance, w.installationID)
 		}
 	}
 }
@@ -193,12 +211,8 @@ func TestCreateStampsOwnershipComment(t *testing.T) {
 		{Hostname: "v6.home.arpa", Answer: "fd00::1"},
 		{Hostname: "alias.home.arpa.", Answer: "app.home.arpa."},
 	} {
-		provenance, err := provider.Create(context.Background(), desired)
-		if err != nil {
+		if _, err := provider.Create(context.Background(), desired); err != nil {
 			t.Fatalf("Create(%+v) returned error: %v", desired, err)
-		}
-		if provenance != nil {
-			t.Fatalf("expected no provenance, got %+v", provenance)
 		}
 	}
 
@@ -207,6 +221,52 @@ func TestCreateStampsOwnershipComment(t *testing.T) {
 		newRecord("v6.home.arpa", "AAAA", "fd00::1", testMarker),
 		newRecord("alias.home.arpa", "CNAME", "app.home.arpa", testMarker),
 	)
+}
+
+// The planner proves ownership by matching stored provenance against listed
+// provenance, so any normalization drift would silently block stale cleanup.
+func TestMutationProvenanceMatchesListedRecords(t *testing.T) {
+	t.Parallel()
+
+	_, provider := newFakeServer(t,
+		newRecord("app.home.arpa", "A", "10.0.0.10", testMarker+" media server"),
+		newRecord("old.home.arpa", "CNAME", "app.home.arpa", testMarker),
+	)
+	ctx := context.Background()
+
+	var returned []*contracts.RecordProvenance
+	collect := func(provenance *contracts.RecordProvenance, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("mutation returned error: %v", err)
+		}
+		returned = append(returned, provenance)
+	}
+	collect(provider.Create(ctx, contracts.DesiredRecord{Hostname: "V6.Home.Arpa.", Answer: "FD00:0::1"}))
+	collect(provider.Create(ctx, contracts.DesiredRecord{Hostname: "alias.home.arpa.", Answer: "App.Home.Arpa."}))
+	collect(provider.Update(ctx,
+		contracts.VisibleRecord{Hostname: "app.home.arpa", Answer: "10.0.0.10"},
+		contracts.DesiredRecord{Hostname: "app.home.arpa", Answer: "10.0.0.11"}))
+	collect(provider.Update(ctx,
+		contracts.VisibleRecord{Hostname: "old.home.arpa", Answer: "app.home.arpa"},
+		contracts.DesiredRecord{Hostname: "old.home.arpa", Answer: "10.0.0.12"}))
+
+	visible, err := provider.ListVisible(ctx)
+	if err != nil {
+		t.Fatalf("ListVisible returned error: %v", err)
+	}
+	if len(visible) != len(returned) {
+		t.Fatalf("unexpected visible records: %+v", visible)
+	}
+	listed := make(map[contracts.RecordProvenance]bool)
+	for _, v := range visible {
+		listed[*v.Provenance] = true
+	}
+	for i, provenance := range returned {
+		if provenance == nil || provenance.InstallationID != testInstallationID || !listed[*provenance] {
+			t.Fatalf("mutation %d returned provenance %+v that does not match any listed record %+v", i, provenance, visible)
+		}
+	}
 }
 
 func TestUpdateKeepsRecordAttributes(t *testing.T) {
