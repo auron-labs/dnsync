@@ -81,7 +81,10 @@ func (p *Provider) Update(ctx context.Context, visible contracts.VisibleRecord, 
 	// is removed before its replacement is added. Otherwise add first so a
 	// failure leaves a duplicate rather than a gap.
 	if sameDNSName(visible.Hostname, desired.Hostname) && (isCNAME(visible.Answer) || isCNAME(desired.Answer)) {
-		if err := p.remove(ctx, visible.Hostname, visible.Answer); err != nil {
+		// Every CNAME write restarts FTL, which would refuse the add that
+		// follows. Adding a CNAME restarts it anyway, so the removal can wait
+		// for that restart.
+		if err := p.remove(ctx, visible.Hostname, visible.Answer, !isCNAME(desired.Answer)); err != nil {
 			return nil, err
 		}
 		return nil, p.add(ctx, desired.Hostname, desired.Answer)
@@ -90,11 +93,11 @@ func (p *Provider) Update(ctx context.Context, visible contracts.VisibleRecord, 
 	if err := p.add(ctx, desired.Hostname, desired.Answer); err != nil {
 		return nil, err
 	}
-	return nil, p.remove(ctx, visible.Hostname, visible.Answer)
+	return nil, p.remove(ctx, visible.Hostname, visible.Answer, true)
 }
 
 func (p *Provider) Delete(ctx context.Context, visible contracts.VisibleRecord) error {
-	return p.remove(ctx, visible.Hostname, visible.Answer)
+	return p.remove(ctx, visible.Hostname, visible.Answer, true)
 }
 
 // Close ends the API session so it does not hold one of Pi-hole's limited API
@@ -227,7 +230,9 @@ func (p *Provider) add(ctx context.Context, hostname, answer string) error {
 	return p.requestJSON(ctx, http.MethodPut, elementPath(hostsElement, answer+" "+hostname), nil)
 }
 
-func (p *Provider) remove(ctx context.Context, hostname, answer string) error {
+// remove deletes the entry serving hostname -> answer. With restart false,
+// FTL applies a CNAME removal at its next restart instead of restarting now.
+func (p *Provider) remove(ctx context.Context, hostname, answer string, restart bool) error {
 	entries, err := p.listEntries(ctx)
 	if err != nil {
 		return err
@@ -239,7 +244,11 @@ func (p *Provider) remove(ctx context.Context, hostname, answer string) error {
 			continue
 		}
 		if len(e.names) == 1 {
-			return p.requestJSON(ctx, http.MethodDelete, elementPath(e.element, e.raw), nil)
+			path := elementPath(e.element, e.raw)
+			if !restart {
+				path += "?restart=false"
+			}
+			return p.requestJSON(ctx, http.MethodDelete, path, nil)
 		}
 		shared = e.raw
 	}

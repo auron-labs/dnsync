@@ -28,6 +28,9 @@ type fakePihole struct {
 	sessions map[string]bool
 	logins   int
 	logouts  int
+	// cnameWrites logs each CNAME change as "<method> restart=<bool>"; FTL
+	// restarts itself after a change unless the request says restart=false.
+	cnameWrites []string
 }
 
 func newFakePihole(t *testing.T, hosts, cnames []string) (*fakePihole, *Provider) {
@@ -85,14 +88,17 @@ func (f *fakePihole) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		f.mutate(w, r.Method, element, items, value)
+		f.mutate(w, r.Method, element, items, value, r.URL.Query().Get("restart") != "false")
 	default:
 		f.t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)
 	}
 }
 
-func (f *fakePihole) mutate(w http.ResponseWriter, method, element string, items *[]string, value string) {
+func (f *fakePihole) mutate(w http.ResponseWriter, method, element string, items *[]string, value string, restart bool) {
+	if element == cnameElement {
+		defer func() { f.cnameWrites = append(f.cnameWrites, fmt.Sprintf("%s restart=%t", method, restart)) }()
+	}
 	index := slices.Index(*items, value)
 	switch method {
 	case http.MethodPut:
@@ -238,6 +244,25 @@ func TestUpdateChangesCNAMETargetAndType(t *testing.T) {
 	}
 
 	fake.assertEntries(t, []string{}, []string{"alias.home.arpa,new.home.arpa", "db.home.arpa,new.home.arpa"})
+}
+
+// A restart after the removal would make FTL refuse the add, leaving the alias
+// unanswered until a later reconcile.
+func TestUpdateCNAMETargetRestartsFTLOnlyAfterTheAdd(t *testing.T) {
+	t.Parallel()
+
+	fake, provider := newFakePihole(t, nil, []string{"alias.home.arpa,old.home.arpa"})
+
+	if _, err := provider.Update(context.Background(),
+		contracts.VisibleRecord{Hostname: "alias.home.arpa", Answer: "old.home.arpa"},
+		contracts.DesiredRecord{Hostname: "alias.home.arpa", Answer: "new.home.arpa"}); err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+
+	fake.assertEntries(t, nil, []string{"alias.home.arpa,new.home.arpa"})
+	if want := []string{"DELETE restart=false", "PUT restart=true"}; !slices.Equal(fake.cnameWrites, want) {
+		t.Fatalf("CNAME writes = %q, want %q", fake.cnameWrites, want)
+	}
 }
 
 func TestUpdateMovesRecordToNewName(t *testing.T) {
