@@ -61,8 +61,10 @@ See `.github/workflows/ci.yaml`.
 - The tagged GoReleaser run uploads Linux and macOS archives with checksums,
   publishes multi-arch images to GHCR, and updates the Homebrew cask in
   `auron-labs/homebrew-tap`.
-- Publishing requires the `HOMEBREW_TAP_GITHUB_TOKEN` secret with push access
-  to `auron-labs/homebrew-tap`.
+- Release workflows authenticate as a GitHub App using the `APP_ID` and
+  `APP_PRIVATE_KEY` secrets. The app needs contents, issues, and pull request
+  write access on this repository and contents write access on
+  `auron-labs/homebrew-tap`.
 
 ## Notes
 
