@@ -89,7 +89,7 @@ Required when `type = "technitium"` and enabled:
 - `zone`, the name of an existing authoritative zone, for example `home.arpa`
 - exactly one of `api_token` or `api_token_ref`
 
-dnsync does not create the zone; reconciles for this output fail until it exists. Every record it manages must fall inside the zone, so set the source's `base_domain` to the zone or a name under it. To manage several zones, configure one output per zone and route records with `proxy.dns`.
+dnsync requires Technitium DNS Server 15.0 or later. It does not create the zone; reconciles for this output fail until it exists. Every record it manages must fall inside the zone, so set the source's `base_domain` to the zone or a name under it. To manage several zones, configure one output per zone and route records with `proxy.dns`.
 
 The token is a Technitium API token whose user can view, modify, and delete records in the zone. `api_token_ref` must use the `ENV:` prefix, for example `ENV:TECHNITIUM_API_TOKEN`.
 

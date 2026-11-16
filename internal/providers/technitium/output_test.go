@@ -122,8 +122,8 @@ func (f *fakeServer) handle(path string, form map[string][]string) (any, error) 
 	return nil, errors.New("unexpected path " + path)
 }
 
-// stored returns a name or address in the normalized form Technitium lists
-// back, which need not match what the provider sent.
+// stored lowercases names and canonicalizes addresses so tests cannot pass by
+// relying on the server echoing back exactly what the provider sent.
 func stored(value string) string {
 	if addr, err := netip.ParseAddr(value); err == nil {
 		return addr.String()
