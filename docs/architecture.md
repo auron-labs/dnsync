@@ -20,6 +20,8 @@ From these, it works out the changes needed. This pass is called a reconcile.
   together are handled in one pass.
 - When a record's removal grace period ends.
 - After reconnecting to Docker, if the connection dropped.
+- After a failed pass, on the retry schedule described in
+  [When something fails](#when-something-fails).
 
 ## Creating and updating records
 

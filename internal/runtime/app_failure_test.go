@@ -292,3 +292,33 @@ func TestAppRunDoesNotSpinOnFailingDueRemoval(t *testing.T) {
 		})
 	}
 }
+
+// A permanently failing output that holds no tunnel records must not stop an
+// expired tunnel from being torn down.
+func TestAppReconcileOnceFinishesTunnelWhenUnrelatedOutputFails(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	tunnelOutput := &tunnelLifecycleOutput{ref: contracts.ProviderRef{Type: "cloudflare", Name: "primary"}}
+	source := &tunnelLifecycleSource{ref: contracts.ProviderRef{Type: "docker", Name: "local"}}
+	app := newTunnelLifecycleApp(t, tunnelOutput, source)
+	unrelated := &scriptedOutputStub{provider: contracts.ProviderRef{Type: "adguard", Name: "primary"}, failLists: 1}
+	app.outputs = append(app.outputs, unrelated)
+
+	expired := now.Add(-time.Minute)
+	owned, err := app.store.Load()
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	owned.ManagedTunnels = []state.ManagedTunnel{{Output: tunnelOutput.ref, Source: source.ref, AccountID: "account", Name: "main", TunnelID: "tunnel", Image: "cloudflared:test", RemoveAfter: &expired}}
+	if err := app.store.Save(owned); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	if err := app.reconcileOnce(context.Background()); err == nil || !strings.Contains(err.Error(), "list refused") {
+		t.Fatalf("expected the unrelated output failure to be reported, got %v", err)
+	}
+	if tunnelOutput.deletes != 1 {
+		t.Fatalf("expected the expired tunnel to be deleted, got %d deletes", tunnelOutput.deletes)
+	}
+}

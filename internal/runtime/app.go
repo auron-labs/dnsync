@@ -241,11 +241,13 @@ func (a *App) reconcileOnce(ctx context.Context) error {
 
 	// A failing output must not hold up the others.
 	var failures []error
+	failedOutputs := make(map[contracts.ProviderRef]bool)
 	for i, output := range a.outputs {
 		outputDesired := filterDesiredForOutputWithTunnelPriority(desired, output.Provider(), tunnelHostnames, tunnel)
 		visible, err := output.ListVisible(ctx)
 		if err != nil {
 			failures = append(failures, outputListError{outputIndex: i, provider: output.Provider(), err: err})
+			failedOutputs[output.Provider()] = true
 			continue
 		}
 		logDebug(ctx, a.deps.Logger, "listed visible records from output", "output", providerKey(output.Provider()), "records", len(visible))
@@ -271,16 +273,23 @@ func (a *App) reconcileOnce(ctx context.Context) error {
 				return err
 			}
 			failures = append(failures, err)
+			failedOutputs[output.Provider()] = true
 		}
 
 		owned = result.Next
 	}
-	if len(failures) > 0 {
-		// Tunnel teardown can depend on output changes this pass didn't make.
-		return errors.Join(failures...)
+	// Removing expired tunnel ingress follows the DNS changes on the tunnel's
+	// own output, so it waits for that output to succeed.
+	if tunnel == nil || !failedOutputs[tunnel.binding.output.Provider()] {
+		if _, err := a.finishTunnel(ctx, owned, tunnel, now); err != nil {
+			var stateErr *state.Error
+			if errors.As(err, &stateErr) {
+				return err
+			}
+			failures = append(failures, err)
+		}
 	}
-	_, err = a.finishTunnel(ctx, owned, tunnel, now)
-	return err
+	return errors.Join(failures...)
 }
 
 func filterDesiredForOutput(desired []contracts.DesiredRecord, output contracts.ProviderRef) []contracts.DesiredRecord {
