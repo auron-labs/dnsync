@@ -28,7 +28,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-Pin a release tag, such as `ghcr.io/auron-labs/dnsync:v0.3.0`, if you want to
+Pin a release tag, `ghcr.io/auron-labs/dnsync:<version>`, if you want to
 choose when to upgrade.
 
 ## Run with `docker run`

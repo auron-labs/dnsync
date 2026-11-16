@@ -27,10 +27,6 @@ It can also publish containers through a Cloudflare Tunnel and run the
 [DNS servers](docs/integrations.md) explains the cleanup difference and what
 each server needs.
 
-Pi-hole, Technitium DNS Server, and TelltaleDNS support is newer than the
-latest release, v0.3.0. To use them before the next release,
-[build from source](docs/deployment.md#build-from-source).
-
 ## Quick start
 
 This example runs dnsync with Docker Compose and publishes a test container to
@@ -117,8 +113,8 @@ If the record doesn't appear, run `docker compose logs dnsync` and see
 
 ## Install
 
-- **Container image:** `ghcr.io/auron-labs/dnsync:latest`, or pin a release tag
-  such as `ghcr.io/auron-labs/dnsync:v0.3.0`.
+- **Container image:** `ghcr.io/auron-labs/dnsync:latest`, or pin a release
+  tag with `ghcr.io/auron-labs/dnsync:<version>`.
 - **Homebrew:** `brew install --cask auron-labs/tap/dnsync`
 - **[bin](https://github.com/aaronflorey/bin):** `bin install github.com/auron-labs/dnsync`
 - **Release archive:** download a Linux or macOS archive from
