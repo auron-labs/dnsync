@@ -478,6 +478,7 @@ func (a *App) nextRemovalDeadline() (time.Time, error) {
 }
 
 func (a *App) runRemovalDeadlineOnly(ctx context.Context) error {
+	retryBackoff := a.deps.Retry.newBackOff()
 	for {
 		deadline, err := a.nextRemovalDeadline()
 		if err != nil {
@@ -493,8 +494,22 @@ func (a *App) runRemovalDeadlineOnly(ctx context.Context) error {
 			stopTimer(timer)
 			return ctx.Err()
 		case <-timer.C:
-			if err := a.reconcile(ctx, "removal_deadline"); err != nil {
+			failed, err := a.runReconcile(ctx, "removal_deadline")
+			if err != nil {
 				return err
+			}
+			if !failed {
+				retryBackoff.Reset()
+				continue
+			}
+			// A due deadline whose change keeps failing would otherwise fire
+			// again at once.
+			wait := time.NewTimer(retryBackoff.NextBackOff())
+			select {
+			case <-ctx.Done():
+				stopTimer(wait)
+				return ctx.Err()
+			case <-wait.C:
 			}
 		}
 	}

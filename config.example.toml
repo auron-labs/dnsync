@@ -78,8 +78,9 @@ operation_timeout = "10s"
 removal_grace_period = "10m"
 
 [retry]
-# Retry delays while Docker or a DNS server is unreachable. After
-# max_elapsed_time, dnsync exits so systemd or Docker can restart it.
+# How dnsync retries when Docker or a DNS server fails. It keeps trying,
+# waiting up to max_interval between attempts, and logs an error once a
+# temporary problem has lasted max_elapsed_time.
 initial_interval = "1s"
 max_interval = "30s"
 max_elapsed_time = "5m"

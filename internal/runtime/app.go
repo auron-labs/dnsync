@@ -26,6 +26,9 @@ type App struct {
 	store    *state.Store
 	sources  []contracts.Source
 	outputs  []contracts.Output
+	// failing is set while consecutive passes fail, so only the first failure
+	// is logged at error level.
+	failing bool
 }
 
 func New(cfg config.Config) *App {
@@ -76,7 +79,7 @@ func (a *App) Run(ctx context.Context) error {
 	a.setProviders(sources, outputs, deps)
 
 	deps.Logger.Info("starting dnsync runtime", "sources", len(sources), "outputs", len(outputs), "state_path", resolved.State.Path, "log_level", resolved.Logging.Level)
-	if err := a.reconcile(ctx, "startup"); err != nil {
+	if _, err := a.runReconcile(ctx, "startup"); err != nil {
 		if errors.Is(err, context.Canceled) {
 			deps.Logger.Info("runtime cancelled", "reason", ctx.Err())
 			return nil
@@ -108,6 +111,33 @@ func closeOutputs(ctx context.Context, outputs []contracts.Output, deps Deps) {
 			deps.Logger.Warn("could not close output", "output", providerKey(output.Provider()), "error", err)
 		}
 	}
+}
+
+// runReconcile runs a pass for the long-running loops and reports whether it
+// failed. Only state file failures and cancellation come back as errors, which
+// stop dnsync. Failures from Docker or a DNS server are logged, and the caller
+// retries the pass later; exiting instead would restart dnsync into the same
+// failure.
+func (a *App) runReconcile(ctx context.Context, reason string) (bool, error) {
+	err := a.reconcile(ctx, reason)
+	if err == nil {
+		a.failing = false
+		return false, nil
+	}
+	var stateErr *state.Error
+	if ctx.Err() != nil || errors.As(err, &stateErr) {
+		return true, err
+	}
+
+	// Error-level records reach Sentry, so a problem that persists across
+	// retries is reported once rather than on every attempt.
+	level := slog.LevelError
+	if a.failing {
+		level = slog.LevelWarn
+	}
+	a.failing = true
+	a.deps.Logger.Log(ctx, level, "reconcile failed; retrying later", "reason", reason, "error", err)
+	return true, nil
 }
 
 func (a *App) reconcile(ctx context.Context, reason string) error {
@@ -209,11 +239,14 @@ func (a *App) reconcileOnce(ctx context.Context) error {
 		}
 	}
 
+	// A failing output must not hold up the others.
+	var failures []error
 	for i, output := range a.outputs {
 		outputDesired := filterDesiredForOutputWithTunnelPriority(desired, output.Provider(), tunnelHostnames, tunnel)
 		visible, err := output.ListVisible(ctx)
 		if err != nil {
-			return outputListError{outputIndex: i, provider: output.Provider(), err: err}
+			failures = append(failures, outputListError{outputIndex: i, provider: output.Provider(), err: err})
+			continue
 		}
 		logDebug(ctx, a.deps.Logger, "listed visible records from output", "output", providerKey(output.Provider()), "records", len(visible))
 		for _, record := range visible {
@@ -232,10 +265,19 @@ func (a *App) reconcileOnce(ctx context.Context) error {
 			Logger: a.deps.Logger,
 		})
 		if err != nil {
-			return fmt.Errorf("reconcile output %d (%s/%s): %w", i, output.Provider().Type, output.Provider().Name, err)
+			err = fmt.Errorf("reconcile output %d (%s/%s): %w", i, output.Provider().Type, output.Provider().Name, err)
+			var stateErr *state.Error
+			if errors.As(err, &stateErr) {
+				return err
+			}
+			failures = append(failures, err)
 		}
 
 		owned = result.Next
+	}
+	if len(failures) > 0 {
+		// Tunnel teardown can depend on output changes this pass didn't make.
+		return errors.Join(failures...)
 	}
 	_, err = a.finishTunnel(ctx, owned, tunnel, now)
 	return err
@@ -335,9 +377,6 @@ func (a *App) runSteadyState(ctx context.Context) error {
 		reconnectBackoffs[i] = a.deps.Retry.newBackOff()
 		a.startSourceWatch(ctx, i, watchable, events)
 	}
-	if err := a.reconcile(ctx, "watch_startup_handoff"); err != nil {
-		return err
-	}
 	var removalTimer *time.Timer
 	var removalTimerC <-chan time.Time
 	refreshRemovalTimer := func() {
@@ -358,7 +397,32 @@ func (a *App) runSteadyState(ctx context.Context) error {
 		removalTimer = time.NewTimer(delay)
 		removalTimerC = removalTimer.C
 	}
-	refreshRemovalTimer()
+	// After a failed pass, the retry timer replaces the removal timer: a due
+	// deadline whose change keeps failing would otherwise fire again at once.
+	retryBackoff := a.deps.Retry.newBackOff()
+	var retryTimer *time.Timer
+	var retryTimerC <-chan time.Time
+	runPass := func(reason string) error {
+		failed, err := a.runReconcile(ctx, reason)
+		if err != nil {
+			return err
+		}
+		stopTimer(retryTimer)
+		retryTimer, retryTimerC = nil, nil
+		if failed {
+			stopTimer(removalTimer)
+			removalTimer, removalTimerC = nil, nil
+			retryTimer = time.NewTimer(retryBackoff.NextBackOff())
+			retryTimerC = retryTimer.C
+			return nil
+		}
+		retryBackoff.Reset()
+		refreshRemovalTimer()
+		return nil
+	}
+	if err := runPass("watch_startup_handoff"); err != nil {
+		return err
+	}
 	for _, reconnectBackoff := range reconnectBackoffs {
 		reconnectBackoff.Reset()
 	}
@@ -368,34 +432,37 @@ func (a *App) runSteadyState(ctx context.Context) error {
 		case <-ctx.Done():
 			stopTimer(watchHintTimer)
 			stopTimer(removalTimer)
+			stopTimer(retryTimer)
 			return ctx.Err()
+		case <-retryTimerC:
+			retryTimer, retryTimerC = nil, nil
+			if err := runPass("retry"); err != nil {
+				return err
+			}
 		case <-removalTimerC:
 			removalTimer = nil
 			removalTimerC = nil
-			if err := a.reconcile(ctx, "removal_deadline"); err != nil {
+			if err := runPass("removal_deadline"); err != nil {
 				return err
 			}
-			refreshRemovalTimer()
 		case <-watchHintTimerC:
 			watchHintTimer = nil
 			watchHintTimerC = nil
 			coalescedHintCount := pendingWatchHintCount
 			pendingWatchHintCount = 0
 			logDebug(ctx, a.deps.Logger, "running coalesced watch hint reconcile", "debounce", watchHintDebounce, "coalesced_hint_count", coalescedHintCount)
-			if err := a.reconcile(ctx, "watch_hint"); err != nil {
+			if err := runPass("watch_hint"); err != nil {
 				return err
 			}
-			refreshRemovalTimer()
 		case event := <-events:
 			if event.hint {
 				provider := a.sources[event.sourceIndex].Provider()
 				reconnectBackoffs[event.sourceIndex].Reset()
 				if watchHintDebounce <= 0 {
 					logDebug(ctx, a.deps.Logger, "source watch emitted reconcile hint", "source", providerKey(provider), "debounce", watchHintDebounce, "coalesced_hint_count", 1)
-					if err := a.reconcile(ctx, "watch_hint"); err != nil {
+					if err := runPass("watch_hint"); err != nil {
 						return err
 					}
-					refreshRemovalTimer()
 					continue
 				}
 
@@ -423,10 +490,9 @@ func (a *App) runSteadyState(ctx context.Context) error {
 					watchHintTimerC = nil
 					pendingWatchHintCount = 0
 				}
-				if err := a.reconcile(ctx, "watch_reconnect_repair"); err != nil {
+				if err := runPass("watch_reconnect_repair"); err != nil {
 					return err
 				}
-				refreshRemovalTimer()
 				reconnectBackoffs[event.sourceIndex].Reset()
 				continue
 			}

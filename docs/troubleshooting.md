@@ -25,8 +25,9 @@ If no such line appears, check these:
   of that type.
 - **The container belongs to an excluded Compose project.** Check
   `exclude_compose_projects` in your source.
-- **The DNS server has two identical records for the name.** dnsync won't
-  pick one. Delete the duplicate.
+- **The DNS server has two identical records for the name.** dnsync logs
+  `skipping duplicate visible records` and won't pick one. Delete the
+  duplicate.
 
 ## Records for removed containers aren't deleted
 
@@ -62,20 +63,21 @@ dnsync prints the reason as `error: …` and exits with status 1.
 | `unsupported state snapshot version` | The state file was written by a newer dnsync. Upgrade dnsync, or restore an older backup. |
 | `open LOG_FILE` | dnsync can't create the file named in `LOG_FILE`. Check the path and permissions. |
 
-## dnsync keeps restarting
+## dnsync logs `reconcile failed; retrying later`
 
-dnsync exits when a DNS server returns an error that retrying won't fix, or
-stays unreachable longer than `retry.max_elapsed_time`. The last log line
-before it exits names the output and the error.
+A DNS server or Docker returned an error. dnsync keeps running, makes every
+other change it can, and retries until the failing one succeeds. The `error`
+field names the output and the record.
 
 **Wrong password or token.** The DNS server returns `401` or `403`. Check the
-credential and its permissions. See [DNS servers](integrations.md).
+credential and its permissions, then restart dnsync. It reads secrets only at
+startup. See [DNS servers](integrations.md).
 
 **The DNS server is unreachable.** Check the `url` from where dnsync runs. In a
 container, `localhost` means the dnsync container itself.
 
 **Technitium: `zone "…" does not exist`.** Create the zone in Technitium, or
-fix `zone` in your config.
+fix `zone` in your config and restart dnsync.
 
 **Technitium: `has no "dnsync:managed-by=…" comment; leaving it unchanged`.**
 A record dnsync created lost its comment, or was replaced by one you made.
@@ -96,6 +98,13 @@ giving the name to a container.
 **Cloudflare Tunnel: `tunnel derivation failed`.** A container routed through
 the tunnel has no numeric port, or isn't attached to a network. Fix the
 container's labels or networks.
+
+## dnsync stops with a state file error
+
+dnsync stops if it can't read or write its state file while running, for
+example because the disk is full or the directory was removed. It won't change
+records it can't record. Fix the file or its directory, then start dnsync
+again.
 
 ## dnsync lost its connection to Docker
 

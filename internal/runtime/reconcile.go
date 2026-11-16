@@ -44,24 +44,15 @@ type reconcileUpdateCall struct {
 	To   contracts.DesiredRecord
 }
 
-type partialMutationProgressError struct {
-	err error
-}
-
-func (e partialMutationProgressError) Error() string {
-	return e.err.Error()
-}
-
-func (e partialMutationProgressError) Unwrap() error {
-	return e.err
-}
-
 func ReconcileOutput(ctx context.Context, input ReconcileInput) (ReconcileResult, error) {
-	result, _, err := reconcileOutput(ctx, input, nil)
-	return result, err
+	return reconcileOutput(ctx, input, nil)
 }
 
-func reconcileOutput(ctx context.Context, input ReconcileInput, persist func(state.Snapshot) error) (ReconcileResult, bool, error) {
+// reconcileOutput applies the plan for one output. On a mutation error the
+// result still holds the next snapshot: successful mutations, removal
+// deadlines, and drops all belong in state, and failed records keep their
+// previous entries.
+func reconcileOutput(ctx context.Context, input ReconcileInput, persist func(state.Snapshot) error) (ReconcileResult, error) {
 	nowFn := input.Now
 	if nowFn == nil {
 		nowFn = time.Now
@@ -70,56 +61,32 @@ func reconcileOutput(ctx context.Context, input ReconcileInput, persist func(sta
 	now := nowFn().UTC()
 	plan := buildReconcilePlanAt(input.Output.Provider(), input.Desired, input.Visible, input.Owned, now, input.Grace)
 	logReconcilePlan(ctx, input, plan)
-	if len(plan.Ambiguities) > 0 {
-		return ReconcileResult{Ambiguities: plan.Ambiguities}, false, plan.Ambiguities[0]
-	}
 
-	next, progressed, err := applyReconcilePlan(ctx, input.Output, input.Owned, plan, now, persist)
+	// The plan leaves ambiguous records untouched, so the rest is still applied.
+	next, _, err := applyReconcilePlan(ctx, input.Output, input.Owned, plan, now, persist)
+	result := ReconcileResult{Next: next, Ambiguities: plan.Ambiguities}
 	if err != nil {
-		wrappedErr := outputMutationError{provider: input.Output.Provider(), err: err}
-		if progressed {
-			return ReconcileResult{Next: next, Ambiguities: plan.Ambiguities}, true, partialMutationProgressError{err: wrappedErr}
-		}
-		return ReconcileResult{}, false, wrappedErr
+		return result, outputMutationError{provider: input.Output.Provider(), err: err}
 	}
-
-	return ReconcileResult{Next: next, Ambiguities: plan.Ambiguities}, false, nil
+	return result, nil
 }
 
+// ReconcileAndPersist saves the next snapshot even when a mutation failed, then
+// returns that failure with the result.
 func ReconcileAndPersist(ctx context.Context, store *state.Store, input ReconcileInput) (ReconcileResult, error) {
-	result, progressed, err := reconcileOutput(ctx, input, store.Save)
-	if err != nil {
-		var partialErr partialMutationProgressError
-		if progressed && errors.As(err, &partialErr) {
-			if input.Logger != nil {
-				input.Logger.Warn("persisting partial state snapshot after mutation failure", "output", providerKey(input.Output.Provider()), "records", len(result.Next.ManagedRecords), "error", partialErr)
-			}
-			// applyReconcilePlan persists after every successful external
-			// mutation. This final save preserves deadline-only progress and
-			// remains a recovery fallback for callers using older plans.
-			if saveErr := store.Save(result.Next); saveErr != nil {
-				return ReconcileResult{}, errors.Join(err, fmt.Errorf("persist partial state snapshot: %w", saveErr))
-			}
-			if input.Logger != nil {
-				input.Logger.Warn("persisted partial state snapshot after mutation failure", "output", providerKey(input.Output.Provider()), "records", len(result.Next.ManagedRecords))
-			}
-		}
-		return ReconcileResult{}, err
-	}
+	result, err := reconcileOutput(ctx, input, store.Save)
 
 	if input.Logger != nil {
 		input.Logger.Info("persisting state snapshot", "output", providerKey(input.Output.Provider()), "records", len(result.Next.ManagedRecords))
 	}
-
-	if err := store.Save(result.Next); err != nil {
-		return ReconcileResult{}, fmt.Errorf("save state snapshot: %w", err)
+	if saveErr := store.Save(result.Next); saveErr != nil {
+		return ReconcileResult{}, errors.Join(err, fmt.Errorf("save state snapshot: %w", saveErr))
 	}
-
 	if input.Logger != nil {
 		input.Logger.Info("persisted state snapshot", "output", providerKey(input.Output.Provider()), "records", len(result.Next.ManagedRecords))
 	}
 
-	return result, nil
+	return result, err
 }
 
 func logReconcilePlan(ctx context.Context, input ReconcileInput, plan reconcilePlan) {
@@ -164,6 +131,6 @@ func logReconcilePlan(ctx context.Context, input ReconcileInput, plan reconcileP
 		logTrace(ctx, input.Logger, "planned managed-state drop", "output", providerKey(input.Output.Provider()), "hostname", record.Hostname, "answer", record.Answer, "source_id", record.Source.ID)
 	}
 	for _, ambiguity := range plan.Ambiguities {
-		logDebug(ctx, input.Logger, "detected visible record ambiguity", "output", ambiguity.Output, "key", ambiguity.Key, "count", ambiguity.Count)
+		input.Logger.Warn("skipping duplicate visible records", "output", ambiguity.Output, "key", ambiguity.Key, "count", ambiguity.Count)
 	}
 }

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -22,6 +23,16 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 	}
 
 	progressed := false
+	// A record the output refuses permanently must not hold up the others. A
+	// temporary failure stops the pass so the whole pass is retried.
+	var failures []error
+	stop := func(err error) bool {
+		if isTemporaryError(err) || ctx.Err() != nil {
+			return true
+		}
+		failures = append(failures, err)
+		return false
+	}
 	snapshot := func() state.Snapshot {
 		return snapshotWithOutputRecords(owned.InstallationID, owned.ManagedTunnels, otherRecords, recordsByLineage)
 	}
@@ -53,7 +64,11 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 	for _, create := range plan.Creates {
 		provenance, err := output.Create(ctx, create)
 		if err != nil {
-			return snapshot(), progressed, fmt.Errorf("create %s: %w", visibleRecordKey(create.Hostname, create.Answer), err)
+			err = fmt.Errorf("create %s: %w", visibleRecordKey(create.Hostname, create.Answer), err)
+			if stop(err) {
+				return snapshot(), progressed, err
+			}
+			continue
 		}
 		lineage := desiredRecordLineageKey(output.Provider(), create)
 		recordsByLineage[lineage] = state.ManagedRecord{Output: output.Provider(), Source: create.Source, Hostname: create.Hostname, Answer: create.Answer, Proxied: create.Proxied, Provenance: copyRecordProvenance(provenance), LastAppliedAt: now}
@@ -69,7 +84,11 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 	for _, update := range plan.Updates {
 		provenance, err := output.Update(ctx, update.From, update.To)
 		if err != nil {
-			return snapshot(), progressed, fmt.Errorf("update %s: %w", visibleRecordKey(update.From.Hostname, update.From.Answer), err)
+			err = fmt.Errorf("update %s: %w", visibleRecordKey(update.From.Hostname, update.From.Answer), err)
+			if stop(err) {
+				return snapshot(), progressed, err
+			}
+			continue
 		}
 		lineage := desiredRecordLineageKey(output.Provider(), update.To)
 		recordsByLineage[lineage] = state.ManagedRecord{Output: output.Provider(), Source: update.To.Source, Hostname: update.To.Hostname, Answer: update.To.Answer, Proxied: update.To.Proxied, Provenance: nextManagedProvenance(provenance, update.From.Provenance), LastAppliedAt: now}
@@ -86,7 +105,11 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 		// Delete the visible output record before removing its managed lineage so
 		// persistence only forgets ownership after the external mutation succeeds.
 		if err := output.Delete(ctx, del.Visible); err != nil {
-			return snapshot(), progressed, fmt.Errorf("delete %s: %w", visibleRecordKey(del.Visible.Hostname, del.Visible.Answer), err)
+			err = fmt.Errorf("delete %s: %w", visibleRecordKey(del.Visible.Hostname, del.Visible.Answer), err)
+			if stop(err) {
+				return snapshot(), progressed, err
+			}
+			continue
 		}
 		delete(recordsByLineage, managedRecordLineageKey(del.Managed))
 		progressed = true
@@ -95,7 +118,7 @@ func applyReconcilePlan(ctx context.Context, output contracts.Output, owned stat
 		}
 	}
 
-	return snapshot(), progressed, nil
+	return snapshot(), progressed, errors.Join(failures...)
 }
 
 func snapshotWithOutputRecords(installationID string, tunnels []state.ManagedTunnel, otherRecords []state.ManagedRecord, recordsByLineage map[string]state.ManagedRecord) state.Snapshot {

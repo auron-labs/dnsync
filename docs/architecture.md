@@ -62,14 +62,25 @@ tracking it.
 
 ## When something fails
 
-dnsync retries temporary problems with increasing delays: timeouts, network
-errors, rate limits, and server errors. The `[retry]` settings control how long
-it keeps trying.
+A problem with one record or one DNS server doesn't hold up the rest. dnsync
+makes every change it can, logs the ones that failed, and tries again later.
+It keeps retrying until the change succeeds, waiting up to
+[`retry.max_interval`](configuration.md#retry) between attempts. When you fix
+the problem on the DNS server, such as creating a missing zone, dnsync picks it
+up on its next attempt.
 
-If the problem lasts longer than `max_elapsed_time`, or can't be fixed by
-retrying, dnsync exits with the error. A wrong password or a missing zone are
-examples. Run dnsync under systemd or a Docker restart policy so it starts
-again. Each start begins with a full sync.
+The first failure is logged as an error. While the problem lasts, repeats are
+logged as warnings.
+
+Two cases are different:
+
+- **dnsync can't read Docker.** It makes no changes at all, because it can't
+  tell which containers still exist. It retries the same way.
+- **dnsync can't read or write its state file.** It stops, because changing
+  records it can't record would lose track of what it owns.
+
+dnsync reads passwords and tokens once, at startup. After changing one, restart
+dnsync.
 
 dnsync saves the state file after every change it makes. If it stops partway
 through, it still knows which records it created.

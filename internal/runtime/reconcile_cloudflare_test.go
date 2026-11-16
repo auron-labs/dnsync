@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -305,13 +304,12 @@ func TestCloudflareMarkerFlowRejectsAmbiguousDuplicates(t *testing.T) {
 		{Output: provider, Hostname: "STALE.example.com", Answer: "10.0.0.12", Provenance: &contracts.RecordProvenance{RemoteID: "rec-b", InstallationID: installationID}},
 	}
 
-	_, err := ReconcileOutput(context.Background(), ReconcileInput{Output: fakeOutput, Visible: visible, Owned: state.Snapshot{InstallationID: installationID}})
-	if err == nil {
-		t.Fatal("expected ambiguous marker-owned records to fail closed")
+	result, err := ReconcileOutput(context.Background(), ReconcileInput{Output: fakeOutput, Visible: visible, Owned: state.Snapshot{InstallationID: installationID}})
+	if err != nil {
+		t.Fatalf("expected duplicates to be skipped rather than fail the output, got %v", err)
 	}
-	var ambiguityErr *VisibleRecordAmbiguousError
-	if !errors.As(err, &ambiguityErr) {
-		t.Fatalf("expected VisibleRecordAmbiguousError, got %T", err)
+	if len(result.Ambiguities) != 1 {
+		t.Fatalf("expected the duplicate key to be reported, got %+v", result.Ambiguities)
 	}
 	if len(fakeOutput.deleted) != 0 {
 		t.Fatalf("expected no delete for ambiguous marker-owned records, got %d", len(fakeOutput.deleted))

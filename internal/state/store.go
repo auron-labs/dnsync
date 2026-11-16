@@ -45,14 +45,29 @@ func (s *Store) Path() string {
 	return s.path
 }
 
+// Error reports that the state file could not be read or written. The runtime
+// stops on it: changing DNS records without recording ownership would lose
+// track of them.
+type Error struct {
+	err error
+}
+
+func (e *Error) Error() string {
+	return e.err.Error()
+}
+
+func (e *Error) Unwrap() error {
+	return e.err
+}
+
 func (s *Store) Load() (Snapshot, error) {
 	snapshot, migrated, err := s.load()
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, &Error{err: err}
 	}
 	if migrated {
 		if err := s.Save(snapshot); err != nil {
-			return Snapshot{}, fmt.Errorf("persist migrated state file: %w", err)
+			return Snapshot{}, &Error{err: fmt.Errorf("persist migrated state file: %w", err)}
 		}
 	} else {
 		s.installationID = snapshot.InstallationID
@@ -102,6 +117,13 @@ func (s *Store) load() (Snapshot, bool, error) {
 }
 
 func (s *Store) Save(snapshot Snapshot) error {
+	if err := s.save(snapshot); err != nil {
+		return &Error{err: err}
+	}
+	return nil
+}
+
+func (s *Store) save(snapshot Snapshot) error {
 	// In-memory callers may start from EmptySnapshot; inherit the persisted
 	// identity rather than generating or accepting a replacement identity.
 	if snapshot.InstallationID == "" {

@@ -3,7 +3,6 @@ package runtime
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -648,7 +647,7 @@ func TestStaleOwnedDuplicateVisibleRecordsRemainNonDestructive(t *testing.T) {
 		Answer:   "10.0.0.12",
 	}}}
 
-	_, err := ReconcileOutput(context.Background(), ReconcileInput{
+	result, err := ReconcileOutput(context.Background(), ReconcileInput{
 		Output:  fakeOutput,
 		Desired: nil,
 		Visible: []contracts.VisibleRecord{
@@ -658,15 +657,17 @@ func TestStaleOwnedDuplicateVisibleRecordsRemainNonDestructive(t *testing.T) {
 		},
 		Owned: owned,
 	})
-	if err == nil {
-		t.Fatal("expected ambiguity error for duplicate visible keys")
+	if err != nil {
+		t.Fatalf("expected duplicates to be skipped rather than fail the output, got %v", err)
 	}
-	var ambiguityErr *VisibleRecordAmbiguousError
-	if !errors.As(err, &ambiguityErr) {
-		t.Fatalf("expected VisibleRecordAmbiguousError, got %T", err)
+	if len(result.Ambiguities) != 1 {
+		t.Fatalf("expected the duplicate key to be reported, got %+v", result.Ambiguities)
 	}
 	if got := len(fakeOutput.deleted); got != 0 {
 		t.Fatalf("expected ambiguous stale ownership handling to remain non-destructive, got %d deletes", got)
+	}
+	if len(result.Next.ManagedRecords) != 1 || result.Next.ManagedRecords[0].Hostname != "old.local" {
+		t.Fatalf("expected ownership of the ambiguous record to be kept, got %+v", result.Next.ManagedRecords)
 	}
 }
 
@@ -701,7 +702,7 @@ func TestPreserveManualRecords(t *testing.T) {
 	source := contracts.SourceObjectRef{Provider: contracts.ProviderRef{Type: "docker", Name: "local"}, ID: "ctr-1", DisplayName: "svc"}
 	fakeOutput := &reconcileFakeOutput{provider: provider}
 
-	_, err := ReconcileOutput(context.Background(), ReconcileInput{
+	result, err := ReconcileOutput(context.Background(), ReconcileInput{
 		Output:  fakeOutput,
 		Desired: []contracts.DesiredRecord{{Hostname: "app.local", Answer: "10.0.0.10", Source: source}},
 		Visible: []contracts.VisibleRecord{
@@ -710,15 +711,14 @@ func TestPreserveManualRecords(t *testing.T) {
 		},
 		Owned: state.EmptySnapshot(),
 	})
-	if err == nil {
-		t.Fatalf("expected ambiguity error for duplicate visible keys")
+	if err != nil {
+		t.Fatalf("expected duplicates to be skipped rather than fail the output, got %v", err)
 	}
-	var ambiguityErr *VisibleRecordAmbiguousError
-	if !errors.As(err, &ambiguityErr) {
-		t.Fatalf("expected VisibleRecordAmbiguousError, got %T", err)
+	if len(result.Ambiguities) != 1 {
+		t.Fatalf("expected the duplicate key to be reported, got %+v", result.Ambiguities)
 	}
-	if got := len(fakeOutput.deleted); got != 0 {
-		t.Fatalf("expected non-destructive duplicate handling, got %d deletes", got)
+	if got := len(fakeOutput.created) + len(fakeOutput.updated) + len(fakeOutput.deleted); got != 0 {
+		t.Fatalf("expected manual duplicates to be left alone, got %d mutations", got)
 	}
 }
 

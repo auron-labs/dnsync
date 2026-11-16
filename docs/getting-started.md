@@ -118,8 +118,8 @@ A healthy start logs `starting dnsync runtime`, then `reconcile completed`.
 A reconcile is one pass in which dnsync compares your containers with the DNS
 server and makes any changes needed.
 
-If dnsync exits instead, the last log line names the problem. Common ones are
-in [Troubleshooting](troubleshooting.md).
+If dnsync exits or logs `reconcile failed`, the log names the problem. Common
+ones are in [Troubleshooting](troubleshooting.md).
 
 ## 4. Check the record
 

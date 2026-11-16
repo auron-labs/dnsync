@@ -806,7 +806,7 @@ func TestAppReconcileOnceRetainsStaleOwnedAdGuardRecordWithUniqueSameKeyVisibleR
 	}
 }
 
-func TestAppReconcileOnceDoesNotDeleteOrPersistAcrossAmbiguousVisibleDuplicates(t *testing.T) {
+func TestAppReconcileOnceDoesNotDeleteAcrossAmbiguousVisibleDuplicates(t *testing.T) {
 	t.Parallel()
 
 	provider := contracts.ProviderRef{Type: "adguard", Name: "primary"}
@@ -839,13 +839,8 @@ func TestAppReconcileOnceDoesNotDeleteOrPersistAcrossAmbiguousVisibleDuplicates(
 	app.store = store
 	setTestProviders(app, testRuntimeDeps(RetryPolicy{}, 0), []contracts.Source{&startupSourceStub{provider: sourceRef.Provider}}, []contracts.Output{output})
 
-	err = app.reconcileOnce(context.Background())
-	if err == nil {
-		t.Fatal("expected ambiguity error")
-	}
-	var ambiguityErr *VisibleRecordAmbiguousError
-	if !errors.As(err, &ambiguityErr) {
-		t.Fatalf("expected VisibleRecordAmbiguousError, got %T", err)
+	if err := app.reconcileOnce(context.Background()); err != nil {
+		t.Fatalf("expected duplicates to be skipped rather than fail the pass, got %v", err)
 	}
 	if got := output.deleteCount(); got != 0 {
 		t.Fatalf("expected duplicate visible handling to remain non-destructive, got %d deletes", got)
@@ -855,8 +850,12 @@ func TestAppReconcileOnceDoesNotDeleteOrPersistAcrossAmbiguousVisibleDuplicates(
 	if loadErr != nil {
 		t.Fatalf("load persisted snapshot: %v", loadErr)
 	}
-	if len(snapshot.ManagedRecords) != len(seed.ManagedRecords) || snapshot.ManagedRecords[0] != seed.ManagedRecords[0] {
-		t.Fatalf("expected persisted state to remain unchanged on ambiguity, got %+v", snapshot.ManagedRecords)
+	if len(snapshot.ManagedRecords) != 1 {
+		t.Fatalf("expected ownership of the ambiguous record to be kept, got %+v", snapshot.ManagedRecords)
+	}
+	kept, want := snapshot.ManagedRecords[0], seed.ManagedRecords[0]
+	if kept.Hostname != want.Hostname || kept.Answer != want.Answer || kept.Source != want.Source {
+		t.Fatalf("expected ownership of the ambiguous record to be kept, got %+v", kept)
 	}
 }
 
@@ -1313,7 +1312,7 @@ func TestAppRunRetriesWatchTriggeredReconcileAfterOtherSourceFailure(t *testing.
 	}
 }
 
-func TestAppRunDoesNotRetryWatchHintReconcileAfterMutationFailure(t *testing.T) {
+func TestAppRunKeepsRunningAndRetriesAfterPermanentMutationFailure(t *testing.T) {
 	t.Parallel()
 
 	provider := contracts.ProviderRef{Type: "docker", Name: "local"}
@@ -1357,23 +1356,18 @@ func TestAppRunDoesNotRetryWatchHintReconcileAfterMutationFailure(t *testing.T) 
 
 	session.hints <- struct{}{}
 
+	// The permanent failure is not retried within the pass, but the retry timer
+	// runs another pass without waiting for a Docker event.
+	waitForCondition(t, func() bool { return output.createCount() == 2 })
 	select {
 	case err := <-done:
-		if err == nil {
-			t.Fatal("expected runtime error")
-		}
-		if !strings.Contains(err.Error(), "adguard unavailable") {
-			t.Fatalf("expected mutation failure, got %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for mutation failure")
+		t.Fatalf("expected the runtime to keep running after a mutation failure, got %v", err)
+	default:
 	}
 
-	if output.createCount() != 1 {
-		t.Fatalf("expected 1 Create call, got %d", output.createCount())
-	}
-	if source.listDesiredCallCount() != 3 {
-		t.Fatalf("expected single watch-hint reconcile attempt after startup handoff resync, got %d ListDesired calls", source.listDesiredCallCount())
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("expected clean shutdown, got %v", err)
 	}
 }
 

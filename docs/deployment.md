@@ -6,9 +6,8 @@ dnsync runs as a long-lived process that needs:
 - network access to your DNS servers
 - a config file and a writable, persistent state file
 
-Pick the setup that fits your host. Each one restarts dnsync if it exits,
-which dnsync relies on when a DNS server stays unreachable. See
-[When something fails](architecture.md#when-something-fails).
+Pick the setup that fits your host. Each one starts dnsync at boot and
+restarts it if it stops.
 
 ## Run with Docker Compose
 

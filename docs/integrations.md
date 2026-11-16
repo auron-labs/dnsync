@@ -125,8 +125,8 @@ with `proxy.dns`.
   comments.
 - Deleting an A or AAAA record also deletes the matching PTR record in a
   reverse zone on the same server. Technitium does this itself.
-- If the zone doesn't exist, dnsync reports an error and exits instead of
-  writing to a parent zone.
+- If the zone doesn't exist, dnsync logs an error rather than writing to a
+  parent zone. It starts using the zone once you create it.
 
 ## TelltaleDNS
 

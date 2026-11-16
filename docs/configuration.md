@@ -203,14 +203,14 @@ Durations use Go syntax, such as `30s`, `10m`, or `1h30m`.
 
 ## Retry
 
-When a DNS server or Docker is temporarily unreachable, dnsync retries with
-increasing delays.
+When Docker or a DNS server fails, dnsync retries with increasing delays until
+the change succeeds. See [When something fails](architecture.md#when-something-fails).
 
 | Key | Required | Description |
 | --- | --- | --- |
 | `initial_interval` | yes | The first delay, such as `1s`. |
 | `max_interval` | yes | The longest delay between attempts, such as `30s`. |
-| `max_elapsed_time` | yes | When to give up, such as `5m`. dnsync then exits with the error, so run it under something that restarts it, such as systemd or Docker's restart policy. |
+| `max_elapsed_time` | yes | How long dnsync retries a temporary problem, such as a timeout, before it logs an error, such as `5m`. It keeps trying after that, `max_interval` apart. |
 
 ## Environment variables
 
