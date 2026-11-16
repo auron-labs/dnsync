@@ -1,9 +1,12 @@
+extends:
+    - core
+    - workflow
+    - go
 agent:
     - codex
     - opencode
     - claude-code
 scope: project
-extends: [core, workflow, go]
 references:
     - repo: https://github.com/paimonsoror/telltaledns
       name: telltaledns
@@ -11,3 +14,7 @@ references:
       name: adguardhome
     - repo: https://github.com/pi-hole/pi-hole
       name: pi-hole
+    - repo: https://github.com/pi-hole/ftl
+      name: ftl
+    - repo: https://github.com/technitiumsoftware/dnsserver
+      name: dnsserver
