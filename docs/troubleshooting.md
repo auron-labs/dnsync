@@ -1,149 +1,115 @@
 # Troubleshooting
 
-Every symptom on this page maps to a real error path in the codebase. The
-exact wording depends on the inputs; match the leading token to the relevant
-cause, not to a literal character-for-character line.
+Start with dnsync's log. With Docker Compose, run `docker compose logs dnsync`.
+With systemd, run `journalctl -u dnsync.service`. For more detail, set the
+environment variable `LOG_LEVEL=debug` and restart dnsync.
 
-## The daemon exits before reaching steady state
+## A container doesn't get a record
 
-### It complains that `-config` is required
+Set `LOG_LEVEL=debug` and look for `skipped docker DNS record derivation`
+with your container's name. The `reason` and `hint` fields say what's wrong.
 
-**Cause:** The binary was started without the only flag it accepts, or with an
-empty path.
+| Reason | Fix |
+| --- | --- |
+| `no supported alias/port` | Give the container a name with a port, such as `proxy.aliases: app` and `proxy.app.port: "80"`. See [Container labels](configuration.md#container-labels). |
+| `empty_answer_target` | dnsync has no address for the record. Set `host_ip` on the source, or add a `proxy.<name>.host` label. |
+| `proxy.dns=false` | The container opted out of DNS. Remove the label or set it to `true`. |
+| `proxy.exclude` | The container opted out of dnsync. Remove `proxy.exclude=true`. |
 
-**Fix:** Pass `-config /path/to/config.toml` on the command line.
+If no such line appears, check these:
 
-### It mentions `stat config file`
+- **The name already has a record.** dnsync never replaces a record you
+  created. Delete yours, then restart dnsync or the container, and dnsync
+  creates its own.
+- **`proxy.dns` names another output type.** The record only goes to outputs
+  of that type.
+- **The container belongs to an excluded Compose project.** Check
+  `exclude_compose_projects` in your source.
+- **The DNS server has two identical records for the name.** dnsync won't
+  pick one. Delete the duplicate.
 
-**Cause:** The path you passed does not exist or is unreadable by the daemon's
-user. The startup loader calls `os.Stat` on the path and wraps any error with
-this prefix.
+## Records for removed containers aren't deleted
 
-**Fix:** Confirm the file exists and is readable. The repository ships
-`testdata/config/example.toml`, `testdata/config/docker-container.toml`, and
-`testdata/config/socket-proxy.toml` as known-good starting points.
+This is expected in two cases.
 
-### It mentions `decode config file`
+**The grace period hasn't ended.** dnsync waits 10 minutes by default before
+removing a record. Change this with
+[`removal_grace_period`](configuration.md#runtime).
 
-**Cause:** TOML parsing failed, or the loader found an unknown key. The loader
-rejects misspelled fields, unexpected sections, and stale options instead of
-silently ignoring them.
+**The DNS server is AdGuard Home, Pi-hole, or TelltaleDNS.** dnsync can't
+prove a record on these servers is still its own, so it keeps the record and
+logs `blocked managed record cleanup without provenance`. Delete the record on
+the DNS server. dnsync then stops tracking it.
+[Removing records](architecture.md#removing-records) explains why.
 
-**Fix:** Read the error closely:
+On Technitium DNS Server and Cloudflare, dnsync only deletes records that still
+carry its `dnsync:managed-by=` comment. If someone removed the comment, delete
+the record yourself.
 
-- For syntax errors, fix the TOML and try again. `testdata/config/malformed.toml`
-  is a working parse-failure example to compare against.
-- For unknown keys, rename or remove the listed field. See
-  [Configuration](configuration.md) for the supported key list.
+## dnsync exits at startup
 
-### It mentions `unix://` or `tcp://`
+dnsync prints the reason as `error: …` and exits with status 1.
 
-**Cause:** The `sources[].endpoint` field is missing or uses a scheme other
-than the two supported transports.
+| Message contains | Cause and fix |
+| --- | --- |
+| `-config is required` | Start dnsync with `-config /path/to/config.toml`. |
+| `stat config file` | The config file doesn't exist, or dnsync's user can't read it. |
+| `decode config file` | The file isn't valid TOML, or has a setting dnsync doesn't recognise. The message names the line or key. Check spelling against [Configuration](configuration.md). |
+| A setting name, such as `outputs[0].url is required` | That setting is missing or invalid. `outputs[0]` is the first `[[outputs]]` block, counting from 0. |
+| `references an unset environment variable` | An `ENV:` reference points to a variable that isn't set or is empty. Set it where dnsync runs: the Compose `environment`, or the systemd environment file. |
+| `must set exactly one of` | Set either the plain setting or its `*_ref` version, not both. |
+| `decode state file` | The state file is damaged. Restore it from a backup. See [If you lose the state file](integrations.md#if-you-lose-the-state-file). |
+| `unsupported state snapshot version` | The state file was written by a newer dnsync. Upgrade dnsync, or restore an older backup. |
+| `open LOG_FILE` | dnsync can't create the file named in `LOG_FILE`. Check the path and permissions. |
 
-**Fix:** Use a `unix://` socket path or a `tcp://` host:port endpoint.
+## dnsync keeps restarting
 
-### It mentions `exactly one of` or `references an unset environment variable`
+dnsync exits when a DNS server returns an error that retrying won't fix, or
+stays unreachable longer than `retry.max_elapsed_time`. The last log line
+before it exits names the output and the error.
 
-**Cause:** The AdGuard or Cloudflare output is missing one of the credential
-fields, set both an inline value and an `*_ref`, or set a `*_ref` whose
-environment variable is unset or empty.
+**Wrong password or token.** The DNS server returns `401` or `403`. Check the
+credential and its permissions. See [DNS servers](integrations.md).
 
-**Fix:**
+**The DNS server is unreachable.** Check the `url` from where dnsync runs. In a
+container, `localhost` means the dnsync container itself.
 
-- Pick exactly one of `password`/`password_ref` (AdGuard) and one of
-  `api_key`/`api_key_ref` (Cloudflare).
-- Export the referenced environment variable before starting the daemon.
-- Restart after fixing; secret resolution happens once at startup.
+**Technitium: `zone "…" does not exist`.** Create the zone in Technitium, or
+fix `zone` in your config.
 
-### The state file looks stale or corrupted
+**Technitium: `has no "dnsync:managed-by=…" comment; leaving it unchanged`.**
+A record dnsync created lost its comment, or was replaced by one you made.
+Delete the record, or add the comment back.
 
-**Cause:** The state file has a `version` newer than the running daemon, or
-the JSON is malformed. The loader wraps JSON decode failures with a
-`decode state file` prefix and rejects unknown versions with an
-`unsupported state snapshot version` prefix.
+**Pi-hole refuses changes.** Your local DNS records are set through `FTLCONF_`
+environment variables, or Pi-hole is in read-only mode. See
+[Pi-hole](integrations.md#pi-hole).
 
-**Fix:**
+**Pi-hole: `also defines other names`.** A Pi-hole entry lists several names,
+and dnsync needs to change one of them. Split the entry into one name per line
+in Pi-hole.
 
-- If you just upgraded and the file is newer than the daemon supports, stop
-  upgrading and roll back to a build that can read it.
-- If the file is corrupted or hand-edited, point `state.path` at a fresh
-  writable file. Deleting the old file is safe; the store creates a new empty
-  snapshot on startup when the path is missing.
+**TelltaleDNS returns `409`.** The name is defined in TelltaleDNS's config
+files, which dnsync can't change. Remove it from the config file, or stop
+giving the name to a container.
 
-## Reconciliation is happening but produces nothing useful
+**Cloudflare Tunnel: `tunnel derivation failed`.** A container routed through
+the tunnel has no numeric port, or isn't attached to a network. Fix the
+container's labels or networks.
 
-### It logs a visible-record ambiguity error
+## dnsync lost its connection to Docker
 
-**Cause:** An output already has more than one visible record for the same
-hostname/answer pair. The reconciler refuses to guess which one belongs to
-the daemon and skips it.
+dnsync logs `source watch disconnected` and keeps trying to reconnect. Once
+it's back, it runs a full sync, so no changes are missed. If it doesn't
+reconnect, check that Docker or your socket proxy is running, and that dnsync
+can still reach it.
 
-**Fix:** Remove the duplicate from the output (AdGuard rewrite list or
-Cloudflare DNS list), then trigger another reconcile by restarting the
-daemon or waiting for the next Docker event.
+## Check what's on the DNS server
 
-### Stale DNS records are not getting deleted
-
-**Cause (almost always):** The output has an ambiguous duplicate hostname and
-answer pair, so the reconciler refuses to select one. A unique stale AdGuard
-hostname/answer match is deleted from daemon state after the removal grace
-period. Other outputs still require visible daemon-owned provenance.
-
-**Fix:**
-
-- Confirm the record is actually stale (label removed, container gone).
-- Remove duplicate hostname/answer entries from the output, then trigger
-  another reconcile.
-- See [Architecture → Reconciliation model](architecture.md#reconciliation-model)
-  for the precise rule.
-
-### The Docker event stream dropped
-
-**Cause:** The Docker daemon, socket, or proxy became unavailable. The source
-goroutine reports a `docker event stream ended` error on its error channel
-and the runtime reconnects with bounded backoff.
-
-**Fix:**
-
-- Check the Docker daemon and socket permissions.
-- For `tcp://` endpoints, confirm the proxy or remote daemon is still
-  reachable.
-- A full reconcile still happens on every reconnect, so manual recovery is
-  usually unnecessary.
-
-## AdGuard and Cloudflare lookups fail
-
-### `adguard request` errors
-
-**Cause:** The AdGuard API returned a non-2xx status, the connection failed,
-or the request body could not be encoded. Temporary statuses (`408`, `429`,
-`5xx`) are retried with bounded backoff; everything else surfaces.
-
-**Fix:**
-
-- Verify the URL, username, and password in your config.
-- Confirm AdGuard Home is reachable from where the daemon runs.
-- If you need a direct API check, run
-  `curl -u user:pass <url>/control/rewrite/list` against the same URL the
-  daemon uses.
-
-### Cloudflare mutations report duplicate or unknown errors
-
-**Cause:** Record creation may collide with a pre-existing record. The
-provider recovers from the `81058` duplicate-create error by re-reading
-visible records and trying again; other codes surface.
-
-**Fix:** Inspect the relevant zone in the Cloudflare dashboard to confirm
-the conflict is gone, then restart the daemon.
-
-## Quick diagnostic commands
+To confirm what clients see, ask the DNS server directly:
 
 ```bash
-mise exec -- go test ./...
-docker compose -f deploy/compose/live-test/compose.yaml logs -f dnsync
-curl -u admin:adguard-test-password http://127.0.0.1:13000/control/rewrite/list
+dig +short app.home.arpa @192.168.1.2
 ```
 
-The AdGuard URL above matches the live test stack only; use your own URL
-and credentials in production.
+Replace the name and the server's address with your own.

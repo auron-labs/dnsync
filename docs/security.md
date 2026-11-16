@@ -1,36 +1,54 @@
 # Security
 
-## Secrets handling
+dnsync holds credentials for your DNS servers and needs access to Docker.
+This page covers how to keep both under control.
 
-- Use `password_ref = "ENV:NAME"` or `api_key_ref = "ENV:NAME"` instead of committing secrets into TOML.
-- Secret references are resolved from process environment variables at startup.
-- Unset or blank environment variables fail startup.
+## Credentials
+
+- Use `*_ref = "ENV:NAME"` settings so passwords and tokens stay out of the
+  config file. See [Secrets](configuration.md#secrets).
+- Give each credential only what dnsync needs:
+  - AdGuard Home: an admin user. AdGuard Home has no narrower role.
+  - Pi-hole: an app password where possible, rather than your main password.
+  - Technitium DNS Server: a token for a user that can only edit your
+    container zone.
+  - TelltaleDNS: a token with the `write` scope.
+  - Cloudflare: a token limited to Zone → DNS → Edit on one zone, plus
+    Account → Cloudflare Tunnel → Edit only if you use the tunnel.
+- With systemd, keep secrets in an environment file readable only by root,
+  such as `/etc/dnsync/dnsync.env` with permissions `0600`.
+- dnsync removes secrets from its logs and from error reports sent to Sentry.
 
 ## Docker access
 
-The Docker source can read from:
+Access to the Docker socket is equivalent to root on the host. Anyone who can
+control dnsync, or its config, can control Docker.
 
-- a local Unix socket such as `/var/run/docker.sock`
-- a `tcp://...` proxy or remote endpoint
+To limit this, connect dnsync to Docker through a socket proxy that allows only
+the calls it needs. See
+[Use a Docker socket proxy](deployment.md#use-a-docker-socket-proxy).
 
-Mounting the host Docker socket grants broad control over the Docker daemon. If you do not want that access, use a proxy or remote endpoint with narrower network permissions.
+dnsync needs write access to Docker only for the Cloudflare Tunnel, where it
+runs the `cloudflared` container.
 
-## Runtime hardening
+## Files
 
-The sample systemd unit sets:
+- The state file is created with permissions `0600`. It holds no secrets, but
+  it decides which records dnsync may delete, so protect it from changes.
+- A log file set with `LOG_FILE` is also created with permissions `0600`.
 
-- `NoNewPrivileges=true`
-- a dedicated service user and group
-- `Restart=on-failure`
+## The systemd unit
 
-The sample container image runs as root so the documented Docker socket mount works with common host socket ownership.
+The sample unit runs dnsync as an unprivileged `dnsync` user, with
+`NoNewPrivileges=true`. It only gains Docker access if you add it to the
+socket's group.
 
-## What not to log
+## The container image
 
-Do not log:
+The image runs as root so it can use the Docker socket with Docker's default
+permissions. If you use a socket proxy instead, you can run the container as a
+non-root user. That user must be able to write the state directory.
 
-- AdGuard passwords
-- Cloudflare API tokens
-- environment variable values used by secret refs
+## Reporting a vulnerability
 
-The code resolves secrets before provider construction so the values can stay out of committed config.
+See [SECURITY.md](../SECURITY.md).

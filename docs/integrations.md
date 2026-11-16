@@ -1,101 +1,192 @@
-# Integrations
+# DNS servers
 
-## Docker source
+dnsync writes records to one or more DNS servers, called outputs. This page
+covers what each one needs and how dnsync behaves with it. For the exact
+settings, see [Outputs](configuration.md#outputs).
 
-The Docker provider uses the Moby client with API version negotiation. It reads container snapshots and watches container and network events as hints for reconciliation.
+## Comparison
 
-### Label contract
+| DNS server | What dnsync manages | How dnsync recognises its records | Removes records for removed containers |
+| --- | --- | --- | --- |
+| [AdGuard Home](#adguard-home) | DNS rewrites | State file only | No |
+| [Pi-hole](#pi-hole) | Local DNS records and CNAMEs | State file only | No |
+| [Technitium DNS Server](#technitium-dns-server) | A, AAAA, and CNAME records in one zone | State file and a record comment | Yes |
+| [TelltaleDNS](#telltaledns) | Local names | State file only | No |
+| [Cloudflare](#cloudflare) | A, AAAA, and CNAME records in one zone | State file and a record comment | Yes |
 
-- `proxy.aliases` defines aliases.
-- `proxy.dns` gates DNS output selection: unset or `true` targets all outputs, `false` disables DNS for that container, and values like `adguard` or `cloudflare` target a single output type.
-- `proxy.<alias>.port` declares a named alias.
-- `proxy.#<n>.port` and `proxy.*.port` support indexed and wildcard ports.
-- `proxy.<alias>.host`, `proxy.#<n>.host`, and `proxy.*.host` override the answer target.
-- `proxy.exclude=true` opts a container out.
-- If `base_domain` is configured on the source, bare aliases are expanded to FQDNs before reconciliation.
-- `exclude_compose_projects` ignores every container whose standard Compose project label matches a configured project name. Matching is case-insensitive and surrounding whitespace in configuration is ignored.
+Where dnsync can only use its state file, it can't prove that a record is still
+the one it created. You might have deleted it and added an identical one by
+hand. So when a container goes away, dnsync keeps the record and logs
+`blocked managed record cleanup without provenance` with the record's name.
+Delete the record on the DNS server, and dnsync stops tracking it.
 
-When labels stop producing a record, stale cleanup normally requires exactly one same-key record with non-empty daemon-owned provenance. For AdGuard, dnsync instead deletes exactly one visible hostname/answer match from daemon state. This can delete an indistinguishable manual replacement because AdGuard exposes no stable rewrite ID; ambiguous duplicates remain blocked.
+Where dnsync can tag records with a comment, it deletes them itself after the
+[removal grace period](configuration.md#runtime). The comment is
+`dnsync:managed-by=` followed by the installation ID from your
+[state file](data-model.md).
 
-## AdGuard Home output
+## Using several DNS servers
 
-The AdGuard provider uses the control API under `/control/rewrite/*` with basic auth and JSON requests.
+Every container's records go to every enabled output. To send a container's
+records to only one kind of server, label it with that output type, such as
+`proxy.dns=cloudflare`. See [Container labels](configuration.md#container-labels).
 
-- List: `GET /control/rewrite/list`
-- Add: `POST /control/rewrite/add`
-- Update: `PUT /control/rewrite/update`
-- Delete: `POST /control/rewrite/delete`
+## AdGuard Home
 
-Temporary statuses treated as retryable include `408`, `429`, and `5xx` responses.
+dnsync manages AdGuard Home's DNS rewrites, listed under
+**Filters → DNS rewrites**.
 
-AdGuard's rewrite listing has no stable record ID. Stale cleanup therefore relies on the hostname/answer persisted by the daemon and is intentionally destructive for a unique exact match.
+**What you need:** an AdGuard Home admin username and password.
 
-## TelltaleDNS output
+```toml
+[[outputs]]
+type = "adguard"
+name = "adguard"
+url = "http://192.168.1.2:3000"
+username = "admin"
+password_ref = "ENV:ADGUARD_PASSWORD"
+```
 
-The TelltaleDNS provider uses the local names API under `/api/v1/records` with a bearer API token.
+**Good to know:**
 
-- List: `GET /api/v1/records`
-- Set a name's records: `PUT /api/v1/records/{name}`
-- Remove a name: `DELETE /api/v1/records/{name}`
+- dnsync doesn't delete rewrites for removed containers. Delete them in
+  AdGuard Home when you see the warning.
+- If you switch off a rewrite that dnsync manages, dnsync leaves it switched
+  off.
+- If two identical rewrites exist, dnsync won't change either. Delete one to
+  let dnsync manage the other.
 
-`PUT` replaces every API-defined record of a name, so each create, update, or delete reads the name's current records and writes back the full set. Records of types dnsync does not manage (`TXT`, `MX`, `SRV`, `PTR`) on the same name are preserved. Names defined in TelltaleDNS config files are read-only; they appear as visible records, and changes to them fail with `409`.
+## Pi-hole
 
-Answers that parse as IPv4 or IPv6 addresses become `A` or `AAAA` records; anything else becomes a `CNAME`. Created records use TelltaleDNS's default TTL.
+dnsync manages Pi-hole's local DNS records and local CNAME records. It needs
+Pi-hole 6 or later.
 
-Records carry no stable ID, so like AdGuard, stale cleanup relies on the hostname/answer persisted by the daemon and is destructive for a unique exact match. Temporary statuses treated as retryable include `408`, `429`, and `5xx` responses.
+**What you need:** the password you use for Pi-hole's web interface. If you
+use two-factor authentication, create an app password instead, and set
+Pi-hole's `webserver.api.app_sudo` setting to `true` so the app password can
+change DNS records.
 
-## Pi-hole output
+```toml
+[[outputs]]
+type = "pihole"
+name = "pihole"
+url = "http://pihole"
+password_ref = "ENV:PIHOLE_PASSWORD"
+```
 
-The Pi-hole provider uses the Pi-hole v6 REST API. The Pi-hole v5 `admin/api.php` API is not supported.
+**Good to know:**
 
-- Log in: `POST /api/auth`, then send the session ID as `X-FTL-SID`
-- List: `GET /api/config/dns`, reading `dns.hosts` and `dns.cnameRecords`
-- Add an entry: `PUT /api/config/dns/{hosts|cnameRecords}/{entry}`
-- Remove an entry: `DELETE /api/config/dns/{hosts|cnameRecords}/{entry}`
-- Log out: `DELETE /api/auth` when dnsync stops
+- dnsync doesn't delete records for removed containers. Delete them in Pi-hole
+  when you see the warning.
+- Pi-hole restarts its DNS service whenever a CNAME changes, so DNS is briefly
+  unavailable. Address records change without a restart.
+- Pi-hole won't accept changes to local DNS records while they're set through
+  `FTLCONF_` environment variables, such as `FTLCONF_dns_hosts` in a Docker
+  setup, or while Pi-hole is in read-only mode. Remove those variables to let
+  dnsync manage the records.
+- A Pi-hole entry can list several names, such as `192.168.1.50 app admin`.
+  dnsync never rewrites those entries. If dnsync needs to change one, it
+  reports an error, and you'll need to split the entry in Pi-hole.
+- dnsync keeps one login session open while it runs and signs out when it
+  stops. Pi-hole allows 16 sessions by default.
 
-dnsync logs in on first use and reuses the session, which Pi-hole extends on every request. If Pi-hole answers `401` because the session expired or was invalidated, dnsync logs in again and retries the request once. Logging out on shutdown keeps the session from holding one of Pi-hole's `webserver.api.max_sessions` seats until it expires.
+## Technitium DNS Server
 
-Answers that parse as IPv4 or IPv6 addresses become `dns.hosts` entries (`IP HOSTNAME`); anything else becomes a `dns.cnameRecords` entry (`HOSTNAME,TARGET`). Changing a CNAME on the same hostname removes the old entry before adding the new one, because Pi-hole rejects a second CNAME for a name. Each CNAME change restarts Pi-hole's DNS resolver; requests that fail during the restart are retried.
+dnsync manages A, AAAA, and CNAME records in one zone. It needs Technitium DNS
+Server 15.0 or later.
 
-Entries that list several names, such as `IP NAME1 NAME2` or `NAME1,NAME2,TARGET`, appear as visible records but are never rewritten. A change that would remove one of their names fails, and the entry must be edited in Pi-hole.
+**What you need:**
 
-Pi-hole refuses API changes to `dns.hosts` or `dns.cnameRecords` while they are set through `FTLCONF_` environment variables or `misc.readOnly` is enabled.
+- A zone for your container names, such as `home.arpa`. dnsync doesn't create
+  zones. Set your source's `base_domain` to this zone or a name under it.
+- An API token whose user can view, modify, and delete records in that zone.
+  You can create tokens in Technitium's administration settings.
 
-Entries carry no provenance, so like AdGuard, dnsync only changes entries backed by its own state and leaves manual entries alone. When labels stop producing a record, dnsync keeps the entry and logs a blocked-cleanup warning instead of deleting it; remove it in Pi-hole if it is no longer needed. Network failures and `408`, `429` (including exhausted API seats), and `5xx` responses are retryable.
+```toml
+[[outputs]]
+type = "technitium"
+name = "technitium"
+url = "http://technitium:5380"
+zone = "home.arpa"
+api_token_ref = "ENV:TECHNITIUM_API_TOKEN"
+```
 
-## Technitium DNS Server output
+To manage more than one zone, add an output for each zone and route containers
+with `proxy.dns`.
 
-The Technitium provider manages records in one authoritative zone through the HTTP API, sending form-encoded `POST` requests with the API token in the `Authorization: Bearer` header.
+**Good to know:**
 
-- List: `/api/zones/records/get` with `listZone=true`
-- Add: `/api/zones/records/add`
-- Update: `/api/zones/records/update`
-- Delete: `/api/zones/records/delete`
+- dnsync adds the comment `dnsync:managed-by=<installation ID>` to every
+  record it creates. It never changes or deletes a record without that
+  comment. Keep the comment if you edit one of these records; you can add your
+  own notes around it.
+- Records for removed containers are deleted after the removal grace period.
+- When dnsync updates a record, it keeps the record's TTL, disabled state, and
+  comments.
+- Deleting an A or AAAA record also deletes the matching PTR record in a
+  reverse zone on the same server. Technitium does this itself.
+- If the zone doesn't exist, dnsync reports an error and exits instead of
+  writing to a parent zone.
 
-Answers that parse as IPv4 or IPv6 addresses become `A` or `AAAA` records; anything else becomes a `CNAME`. Other record types in the zone are never changed. Created records use Technitium's default TTL. An update keeps the record's TTL, disabled state, expiry, and comments; a change between record types deletes the old record and adds a new one. Deleting an `A` or `AAAA` record also removes a matching `PTR` record from a primary reverse zone, which is Technitium's own behavior.
+## TelltaleDNS
 
-dnsync stamps every record it creates with the comment `dnsync:managed-by=<installation UUID>`. Technitium has no record IDs, so dnsync identifies a record by its type, name, and value, and treats that comment as ownership proof, as it does for Cloudflare. Stale cleanup deletes a record only when it matches daemon state and still carries this installation's comment. Records with the comment are also recovered without a state entry, for example after the state file is lost: when a commented record is the only record on its name, dnsync adopts it if it matches a desired record and deletes it otherwise. Records without the comment, or with another installation's, are never changed; updates and deletes re-check the comment and fail rather than touch them. Keep the comment when editing a managed record in the Technitium console; other notes can sit alongside it.
+dnsync manages TelltaleDNS local names.
 
-Technitium resolves a missing zone to its closest parent zone, so listing fails when the zone Technitium returns differs from the configured `zone`. API failures, including invalid tokens, arrive as HTTP `200` with a non-`ok` status and are not retried. Temporary statuses treated as retryable include `408`, `429`, and `5xx` responses, along with connection failures.
+**What you need:** a TelltaleDNS API token with the `write` scope.
 
-## Cloudflare output
+```toml
+[[outputs]]
+type = "telltaledns"
+name = "telltaledns"
+url = "http://telltale:8053"
+api_key_ref = "ENV:TELLTALEDNS_API_KEY"
+```
 
-The Cloudflare provider uses an API token and a zone ID.
+**Good to know:**
 
-- It lists DNS records for the zone and keeps hostnames as FQDNs in the daemon model.
-- It caches record IDs for update/delete.
-- It creates `A`, `AAAA`, or `CNAME` records based on the target value.
-- It stamps created and updated records with `dnsync:managed-by=<installation UUID>` and reads that comment during recovery.
-- It recovers duplicate-create error code `81058` by re-reading visible records.
+- dnsync doesn't delete names for removed containers. Delete them in
+  TelltaleDNS when you see the warning.
+- Other record types on the same name, such as TXT or MX, are kept when dnsync
+  changes the name's address.
+- Names defined in TelltaleDNS's config files are read-only. dnsync can see
+  them but can't change them.
 
-## Upstream references
+## Cloudflare
 
-This repository's source tree is the best reference for supported behavior:
+dnsync manages DNS records in one Cloudflare zone and can also publish
+containers through a [Cloudflare Tunnel](configuration.md#cloudflare-tunnel).
 
-- `internal/providers/docker/*`
-- `internal/providers/adguard/*`
-- `internal/providers/telltaledns/*`
-- `internal/providers/pihole/*`
-- `internal/providers/technitium/*`
-- `internal/providers/cloudflare/*`
+**What you need:**
+
+- The zone ID, shown on the zone's overview page in the Cloudflare dashboard.
+- An API token with **Zone → DNS → Edit** permission for that zone. For a
+  tunnel, the token also needs **Account → Cloudflare Tunnel → Edit**.
+
+```toml
+[[outputs]]
+type = "cloudflare"
+name = "cloudflare"
+zone_id = "your-zone-id"
+api_key_ref = "ENV:CLOUDFLARE_API_KEY"
+```
+
+**Good to know:**
+
+- dnsync adds the comment `dnsync:managed-by=<installation ID>` to every
+  record it creates or updates. Records you created yourself are never
+  changed.
+- Records for removed containers are deleted after the removal grace period.
+- dnsync's ordinary records are DNS only. If you switch on proxying for one,
+  dnsync switches it back off. Tunnel records are always proxied.
+
+## If you lose the state file
+
+The state file is how dnsync knows which records it created. If you lose it,
+dnsync treats all of its old records as ones you made. It won't change or
+delete them, and it won't create records on names they occupy. This applies to
+Technitium and Cloudflare too: the file holds the installation ID in their
+record comments, and a new file gets a new ID.
+
+To recover, restore the state file from a backup. If you have no backup,
+delete dnsync's old records on each DNS server, then restart dnsync to
+recreate them.

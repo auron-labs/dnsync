@@ -1,10 +1,23 @@
-# Data model
+# State file
 
-## State snapshot
+The state file is how dnsync remembers which DNS records it created. Its
+location is set by [`state.path`](configuration.md#state).
 
-The persisted snapshot lives at `state.path` and is JSON encoded.
+## Look after it
 
-### Schema
+- **Keep it on persistent storage.** In a container, mount a volume for its
+  directory.
+- **Back it up.** If you lose it, dnsync treats its old records as yours and
+  stops managing them. See
+  [If you lose the state file](integrations.md#if-you-lose-the-state-file).
+- **Don't edit it.** dnsync rewrites it after every change.
+
+dnsync creates the file if it doesn't exist, with permissions `0600`. It
+replaces the file in one step, so a crash can't leave it half-written.
+
+## Contents
+
+The file is JSON. You can read it to see what dnsync is tracking:
 
 ```json
 {
@@ -12,84 +25,37 @@ The persisted snapshot lives at `state.path` and is JSON encoded.
   "installation_id": "123e4567-e89b-42d3-a456-426614174000",
   "managed_records": [
     {
-      "output": { "Type": "adguard", "Name": "primary-adguard" },
+      "output": { "Type": "adguard", "Name": "adguard" },
       "source": {
         "Provider": { "Type": "docker", "Name": "local-docker" },
-        "ID": "...",
+        "ID": "4f1c…",
         "DisplayName": "whoami"
       },
-      "hostname": "whoami.test",
-      "answer": "127.0.0.1",
+      "hostname": "whoami.home.arpa",
+      "answer": "192.168.1.50",
       "proxied": false,
-      "provenance": { "RemoteID": "...", "InstallationID": "..." },
+      "provenance": null,
       "last_applied_at": "2026-05-23T00:00:00Z",
       "remove_after": null
     }
   ],
-  "managed_tunnels": [
-    {
-      "output": { "Type": "cloudflare", "Name": "primary-cloudflare" },
-      "source": { "Type": "docker", "Name": "local-docker" },
-      "account_id": "...",
-      "name": "dnsync",
-      "tunnel_id": "...",
-      "sidecar_id": "...",
-      "image": "cloudflare/cloudflared:2026.7.3",
-      "routes": [
-        {
-          "hostname": "whoami.test",
-          "service": "http://whoami:80",
-          "source": {
-            "Provider": { "Type": "docker", "Name": "local-docker" },
-            "ID": "...",
-            "DisplayName": "whoami"
-          },
-          "network_ids": ["..."]
-        }
-      ],
-      "last_applied_at": "2026-05-23T00:00:00Z",
-      "remove_after": null
-    }
-  ]
+  "managed_tunnels": []
 }
 ```
 
-The top-level snapshot fields and the `ManagedRecord` / `ManagedTunnel` /
-`ManagedTunnelRoute` fields are snake_case because they define explicit JSON
-tags. The nested provider/source reference structs use Go's default exported
-field names because they do not define JSON tags.
-
-### Fields
-
-| Field | Notes |
+| Field | Meaning |
 | --- | --- |
-| `version` | Snapshot format version. Current value: `3`; version 1 and 2 snapshots migrate automatically. |
-| `installation_id` | Cryptographically random UUID v4 identifying this state installation. It is generated once and must remain with the state file. |
-| `managed_records` | Managed output records owned by the daemon. |
-| `managed_tunnels` | Dedicated Cloudflare tunnel and connector ownership, including route deadlines and network identity. |
-| `output` | Output provider reference. |
-| `source` | Source object reference (Docker container ID and display name). |
-| `hostname` | Managed hostname. |
-| `answer` | Managed answer target. |
-| `proxied` | `true` when Cloudflare proxy is enabled (tunnel routes publish a proxied CNAME instead of an ordinary DNS record). |
-| `provenance` | Provider-specific remote reference (`RemoteID`) returned from the last successful `Create` / `Update`. Cloudflare also exposes its installation comment as `InstallationID`; the planner uses the remote ID from state or the current installation marker as positive ownership evidence. |
-| `last_applied_at` | Time the record was last applied. |
-| `remove_after` | Set when the record is pending deletion; the planner deletes the remote record and drops the state entry once this time is in the past. |
-| `routes` | Per-hostname tunnel routes for a managed Cloudflare tunnel. |
-| `service` | HTTP origin (`http://container:port`) used by the connector. |
-| `network_ids` | Docker networks the connector attaches to, kept so reconnect and cleanup stay consistent. |
-| `tunnel_id`, `sidecar_id`, `account_id`, `image` | Identity of the remotely managed tunnel and its connector sidecar. |
+| `version` | File format version. dnsync upgrades older versions automatically. |
+| `installation_id` | A random ID for this dnsync installation. It's written into record comments on Technitium and Cloudflare, so it must stay with the file. |
+| `managed_records` | The records dnsync created, one entry per output and name. |
+| `output` | The output that holds the record, by type and name. |
+| `source` | The container that asked for it. |
+| `hostname`, `answer` | The record's name and address. |
+| `proxied` | Whether the record is proxied through Cloudflare. |
+| `provenance` | The server's ID for the record, plus the installation ID from its comment. Only Technitium and Cloudflare fill this in. |
+| `last_applied_at` | When dnsync last wrote the record. |
+| `remove_after` | Set while the container is gone. dnsync removes the record after this time. |
+| `managed_tunnels` | The Cloudflare Tunnel and `cloudflared` container dnsync runs, and the containers routed through it. |
 
-## Persistence behavior
-
-- The store creates the file if it does not exist.
-- Writes are atomic.
-- The file is saved with `0600` permissions where supported.
-- Version 1 and 2 snapshots migrate automatically to version 3 and receive one persisted installation UUID. Keep that ID with the state backup so Cloudflare ownership comments continue to identify this installation after restart or restore. Tunnel tokens are never persisted; the daemon re-fetches a fresh token on every reconcile when the tunnel is still required.
-
-## Where it is used
-
-- `internal/state/model.go`
-- `internal/state/store.go`
-- `internal/runtime/reconcile.go`
-- `internal/runtime/reconcile_apply.go`
+dnsync never stores the tunnel's connector token. It fetches a fresh one from
+Cloudflare when needed.

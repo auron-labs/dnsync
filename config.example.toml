@@ -1,19 +1,20 @@
 [[sources]]
 type = "docker"
 name = "local-docker"
-# Root docker-compose example using the mounted Docker socket.
+# Docker on this host, through the socket that docker-compose.yaml mounts.
 endpoint = "unix:///var/run/docker.sock"
-# Ignore containers started by Compose projects that share this Docker daemon.
+# Ignore containers from these Compose projects. dnsync-live-test is this
+# repository's test stack.
 exclude_compose_projects = ["dnsync-live-test"]
-# Append this suffix to label-derived hostnames like "foo" -> "foo.bar.bz".
+# Domain added to container names: "foo" becomes "foo.bar.bz".
 base_domain = "bar.bz"
-# Set the host-reachable IP that derived DNS records should answer with.
+# The address records point to, usually this Docker host's LAN address.
 host_ip = "192.168.1.50"
 
 [[outputs]]
 type = "adguard"
 name = "primary-adguard"
-# Replace with the AdGuard Home URL reachable from this container.
+# AdGuard Home's address, as reachable from the dnsync container.
 url = "http://adguardhome:3000"
 username = "admin"
 password_ref = "ENV:ADGUARD_PASSWORD"
@@ -25,16 +26,16 @@ password_ref = "ENV:ADGUARD_PASSWORD"
 # url = "http://telltale:8053"
 # api_key_ref = "ENV:TELLTALEDNS_API_KEY"
 
-# Optional: Pi-hole v6 local DNS records. With two-factor authentication
-# enabled, use an app password and set webserver.api.app_sudo = true.
+# Optional: Pi-hole 6 or later. With two-factor authentication, use an app
+# password and set Pi-hole's webserver.api.app_sudo to true.
 # [[outputs]]
 # type = "pihole"
 # name = "primary-pihole"
 # url = "http://pihole"
 # password_ref = "ENV:PIHOLE_PASSWORD"
 
-# Optional: Technitium DNS Server. The zone must already exist, and the token
-# needs Modify and Delete permission on it.
+# Optional: Technitium DNS Server 15.0 or later. The zone must already exist,
+# and the token's user must be able to modify and delete records in it.
 # [[outputs]]
 # type = "technitium"
 # name = "primary-technitium"
@@ -42,8 +43,9 @@ password_ref = "ENV:ADGUARD_PASSWORD"
 # zone = "bar.bz"
 # api_token_ref = "ENV:TECHNITIUM_API_TOKEN"
 
-# Optional: enable one dedicated Cloudflare Tunnel output. The source name must
-# match exactly one [[sources]] entry of type "docker".
+# Optional: Cloudflare DNS. The [outputs.tunnel] block is also optional; it
+# publishes containers labelled proxy.cloudflare.tunnel=true through a
+# Cloudflare Tunnel. Its source must be the name of a [[sources]] entry.
 # [[outputs]]
 # type = "cloudflare"
 # name = "primary-cloudflare"
@@ -56,23 +58,28 @@ password_ref = "ENV:ADGUARD_PASSWORD"
 # connector_image = "cloudflare/cloudflared:2026.7.3"
 
 [state]
-# The compose file mounts ./state here for persistence across restarts.
+# Where dnsync records which DNS records it owns. docker-compose.yaml mounts
+# ./state here; keep it and back it up.
 path = "/var/lib/dnsync/state.json"
 
 [logging]
 # Supported levels: trace, debug, info, warn, error.
 level = "info"
 format = "json"
+# Rotation for the log file set by the LOG_FILE environment variable.
 max_size_mb = 10
 max_backups = 5
 
 [runtime]
-# Optional per-operation timeout for external API calls and similar work.
+# Time limit for each request to Docker or a DNS server.
 operation_timeout = "10s"
-# Empty defaults to 10m; use 0s to disable removal grace.
+# How long to wait after a container disappears before removing its records.
+# 0s removes them immediately.
 removal_grace_period = "10m"
 
 [retry]
+# Retry delays while Docker or a DNS server is unreachable. After
+# max_elapsed_time, dnsync exits so systemd or Docker can restart it.
 initial_interval = "1s"
 max_interval = "30s"
 max_elapsed_time = "5m"

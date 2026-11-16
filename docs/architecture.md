@@ -1,48 +1,81 @@
-# Architecture
+# How dnsync works
 
-## High-level flow
+This page explains how dnsync decides which records to create, change, and
+remove. It's useful when dnsync does something you didn't expect.
 
-1. `cmd/dnsync/main.go` parses `-config` and starts the app.
-2. `internal/config` loads TOML, validates it, and resolves `ENV:` secret references.
-3. `internal/runtime` builds source and output providers from the registry.
-4. `internal/state` opens or creates the owned-record snapshot file.
-5. The app performs a startup reconcile, then enters steady-state watch/reconcile mode.
+## Three sources of truth
 
-## Main packages
+Each time dnsync syncs, it compares three things:
 
-| Package | Responsibility |
-| --- | --- |
-| `cmd/dnsync` | CLI entrypoint and signal handling. |
-| `internal/config` | TOML model, validation, and secret resolution. |
-| `internal/runtime` | Provider wiring, reconciliation, retries, and watch handling. |
-| `internal/providers/docker` | Docker snapshot and event source. |
-| `internal/providers/adguard` | AdGuard rewrite output. |
-| `internal/providers/cloudflare` | Cloudflare DNS output. |
-| `internal/providers/telltaledns` | TelltaleDNS local names output. |
-| `internal/providers/pihole` | Pi-hole local DNS output. |
-| `internal/providers/technitium` | Technitium DNS Server zone records output. |
-| `internal/state` | Persisted ownership snapshot. |
+- **Your containers.** The names and addresses your container labels ask for.
+- **The DNS server.** The records that exist there right now.
+- **The state file.** The records dnsync created earlier.
 
-## Reconciliation model
+From these, it works out the changes needed. This pass is called a reconcile.
 
-The daemon does not blindly mirror every visible record. It compares:
+## When dnsync syncs
 
-- desired records from Docker sources,
-- visible records from each output,
-- owned records from the state snapshot.
+- At startup, in full.
+- When Docker reports a container or network change. Changes that arrive
+  together are handled in one pass.
+- When a record's removal grace period ends.
+- After reconnecting to Docker, if the connection dropped.
 
-That comparison decides whether to create, update, delete, or drop records. Stale cleanup normally requires exactly one same-key visible record with non-empty daemon-owned provenance. AdGuard is the exception: when exactly one visible hostname/answer match exists for a daemon state entry, it is deleted despite lacking provenance. That can delete an indistinguishable manual replacement; ambiguous duplicates remain blocked. Only daemon-owned records are persisted back into state.
+## Creating and updating records
 
-## Recovery behavior
+dnsync creates a record when a container asks for a name that has no record
+on the DNS server.
 
-- Startup always performs a full reconcile from current Docker snapshot + state.
-- Docker watch events are treated as hints, not source of truth.
-- Provider read/write calls during reconcile run with the configured per-operation timeout (`runtime.operation_timeout`, default `10s`).
-- That timeout applies to `ListDesired`, `ListVisible`, `Create`, `Update`, and `Delete`, but not to long-lived `Watch(ctx)` streams and not to the reconcile loop as a whole.
-- Watch disconnects trigger reconnect attempts with bounded backoff.
-- Temporary AdGuard output failures also retry within the configured retry window. Retry timing starts only after the attempted operation returns or times out.
-- Partial mutations can still be persisted so ownership remains recoverable after an interrupted run.
+If the name already has an address or CNAME record that dnsync didn't create,
+dnsync leaves the name alone. Your own records always win.
 
-## State and ownership
+When a container's address changes, dnsync updates its record straight away.
 
-The state file tracks managed records by output/source lineage, not by raw rewrite contents alone. Most outputs need matching daemon-owned provenance to delete a stale remote record. AdGuard uses its persisted hostname/answer pair instead because its rewrite API exposes no stable ID; this trades protection for an indistinguishable manual replacement for automatic cleanup.
+## Removing records
+
+When a container stops asking for a name, because it was removed, stopped, or
+relabelled, dnsync waits for the removal grace period. The default is 10
+minutes. If the container comes back in that time, nothing changes.
+
+After the grace period, dnsync deletes the record only if it can prove the
+record is still its own:
+
+- On **Technitium DNS Server** and **Cloudflare**, dnsync tags each record with
+  a comment. A record that still carries its comment, and matches the state
+  file, is deleted.
+- On **AdGuard Home**, **Pi-hole**, and **TelltaleDNS**, records have no IDs or
+  comments. A record dnsync created looks identical to one you added by hand
+  with the same name and address. So dnsync keeps it and logs
+  `blocked managed record cleanup without provenance`.
+
+When you delete a blocked record yourself, dnsync notices it's gone and stops
+tracking it.
+
+## Records dnsync won't touch
+
+- Records you created. dnsync never changes them, even if a container asks
+  for the same name.
+- Records with another dnsync installation's comment, on Technitium and
+  Cloudflare.
+- Duplicates. If the DNS server has two identical records, dnsync can't tell
+  which one is its own, so it changes neither.
+
+## When something fails
+
+dnsync retries temporary problems with increasing delays: timeouts, network
+errors, rate limits, and server errors. The `[retry]` settings control how long
+it keeps trying.
+
+If the problem lasts longer than `max_elapsed_time`, or can't be fixed by
+retrying, dnsync exits with the error. A wrong password or a missing zone are
+examples. Run dnsync under systemd or a Docker restart policy so it starts
+again. Each start begins with a full sync.
+
+dnsync saves the state file after every change it makes. If it stops partway
+through, it still knows which records it created.
+
+## Related
+
+- [DNS servers](integrations.md): how each server behaves.
+- [State file](data-model.md): what dnsync stores.
+- [Configuration](configuration.md#runtime): the grace period and timeouts.

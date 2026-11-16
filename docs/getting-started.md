@@ -1,196 +1,173 @@
 # Getting started
 
-This page gets you to a running daemon and a verified record in the fewest
-steps. Read it once top-to-bottom the first time; after that, treat it as a
-cheat sheet for the three paths below.
+This guide takes you from nothing to a container that resolves by name through
+your DNS server. It uses Docker Compose and AdGuard Home. The steps for other
+DNS servers differ only in the `[[outputs]]` block; see
+[DNS servers](integrations.md) for theirs.
 
-## What you'll have when you're done
+By the end you will have:
 
-Pick whichever path matches your environment. All three end with the same
-outcome: the `whoami` container in the live test stack resolves through
-AdGuard to `127.0.0.1`.
+- dnsync running as a container on your Docker host
+- a test container named `whoami.home.arpa` in your DNS
+- a feel for what happens when you change or remove a container
 
-| Path | Best when | Where the daemon runs | Where AdGuard lives |
-| --- | --- | --- | --- |
-| [Host binary](#host-binary-with-systemd) | You want a Linux service on a single host | A `systemd` unit on the host | On the same host, reachable on `127.0.0.1:3000` |
-| [Container, root compose](#container-with-the-root-compose-file) | You already run a Docker host and want the simplest compose file | The published GHCR image, mounted `/var/run/docker.sock` | Inside the same compose project on the `adguardhome` host |
-| [Container, manual run](#container-with-an-explicit-docker-run) | You want to see every flag once | The published GHCR image, mounted `/var/run/docker.sock` | Wherever you point `outputs[].url` |
+## Before you start
 
-If you only want to poke the daemon without touching your real DNS, the live
-test stack under `deploy/compose/live-test/` runs the daemon, AdGuard, and a
-sample workload together. See [Verify with the live stack](#verify-with-the-live-stack).
+You need:
 
-## Prereqs in common
+- A Docker host with Docker Compose.
+- A DNS server that dnsync supports. This guide uses AdGuard Home.
+- The AdGuard Home admin username and password.
+- The IP address your DNS names should point to. This is usually the Docker
+  host's LAN address, because that's where container ports are published.
+- A domain for your containers, such as `home.arpa`. Every container name is
+  created under it.
 
-- Go 1.27.4 via `mise.toml` for building from source (skip if you install
-  from a release archive or container image).
-- A reachable Docker daemon — local Unix socket, a TCP proxy, or a remote
-  endpoint. The daemon speaks `unix://` and `tcp://` only.
-- An AdGuard Home instance with admin access. Create a dedicated user/password
-  pair; the daemon needs basic-auth API access.
-- For Cloudflare output: an API token with Zone DNS write (and Account Tunnel
-  write if you also enable the tunnel block).
+## 1. Write the configuration
 
-## Host binary with systemd
+Create a directory for dnsync and a `config.toml` inside it:
 
-1. Install the pinned toolchain (skip if you already have Go 1.27.4):
+```toml
+[[sources]]
+type = "docker"
+name = "local-docker"
+endpoint = "unix:///var/run/docker.sock"
+base_domain = "home.arpa"
+host_ip = "192.168.1.50"
 
-   ```bash
-   mise install
-   ```
+[[outputs]]
+type = "adguard"
+name = "adguard"
+url = "http://192.168.1.2:3000"
+username = "admin"
+password_ref = "ENV:ADGUARD_PASSWORD"
 
-2. Build and install the binary:
+[state]
+path = "/var/lib/dnsync/state.json"
 
-   ```bash
-   mise exec -- go build -o bin/dnsync ./cmd/dnsync
-   sudo install -m 0755 bin/dnsync /usr/local/bin/dnsync
-   ```
+[logging]
+level = "info"
+format = "text"
 
-3. Copy a starter config and edit it:
-
-   ```bash
-   sudo mkdir -p /etc/dnsync
-   sudo install -m 0644 testdata/config/example.toml /etc/dnsync/config.toml
-   ```
-
-   At minimum, change `sources[].host_ip` to the IP your DNS clients should
-   reach, and set `sources[].endpoint` to your Docker socket. For a remote
-   Docker endpoint, start from `testdata/config/socket-proxy.toml` instead.
-
-4. Create a writable state directory and an env file:
-
-   ```bash
-   sudo mkdir -p /var/lib/dnsync
-   sudo tee /etc/dnsync/dnsync.env >/dev/null <<'EOF'
-   ADGUARD_PASSWORD=replace-me
-   EOF
-   sudo chmod 0600 /etc/dnsync/dnsync.env
-   ```
-
-5. Install the systemd unit and start the service:
-
-   ```bash
-   sudo install -m 0644 deploy/systemd/dnsync.service \
-     /etc/systemd/system/dnsync.service
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now dnsync.service
-   sudo systemctl status dnsync.service
-   ```
-
-   If you mount `/var/run/docker.sock`, the service user must be able to read
-   and write that socket. The sample unit has `SupplementaryGroups=docker`
-   commented out for exactly that case.
-
-6. Confirm the daemon started cleanly:
-
-   ```bash
-   sudo journalctl -u dnsync.service -n 50 --no-pager
-   ```
-
-   You should see a `reconcile completed` line with no error after it.
-
-## Container with the root compose file
-
-The repository ships `docker-compose.yaml` plus `config.example.toml` as the
-shortest path to a working container deployment.
-
-1. Export the AdGuard password in your shell, or add it to `.env`:
-
-   ```bash
-   echo 'ADGUARD_PASSWORD=replace-me' >> .env
-   ```
-
-   `config.example.toml` references it through `password_ref = "ENV:ADGUARD_PASSWORD"`,
-   so the password never appears in the committed config.
-
-2. Edit `config.example.toml` if needed:
-
-   - `sources[].host_ip` is the IP your DNS clients should reach.
-   - `sources[].base_domain` is appended to label-derived names (`foo`
-     becomes `foo.bar.bz`).
-   - `outputs[].url` must be reachable from inside the container. The default
-     `http://adguardhome:3000` assumes AdGuard is on the same Docker network.
-
-3. Bring the stack up:
-
-   ```bash
-   docker compose up -d
-   docker compose logs -f dnsync
-   ```
-
-4. Confirm a reconcile happened and exited cleanly:
-
-   ```bash
-   docker compose logs dnsync | grep "reconcile completed"
-   ```
-
-   A clean start logs `reconcile completed` once on startup, then keeps
-   streaming watch hints and per-event reconciles after that.
-
-## Container with an explicit `docker run`
-
-Use this when you want every flag visible at the command line and you are not
-using Compose for the daemon itself.
-
-```bash
-docker pull ghcr.io/auron-labs/dnsync:latest
-docker run -d \
-  --name dnsync \
-  --restart unless-stopped \
-  -e ADGUARD_PASSWORD=replace-me \
-  -v /opt/dnsync/config.toml:/etc/dnsync/config.toml:ro \
-  -v /opt/dnsync/state:/var/lib/dnsync \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/auron-labs/dnsync:latest \
-  -config /etc/dnsync/config.toml
+[retry]
+initial_interval = "1s"
+max_interval = "30s"
+max_elapsed_time = "5m"
 ```
 
-The image runs as root on purpose so the documented `/var/run/docker.sock`
-mount works with the default host socket ownership. If your host uses
-rootless Docker, adjust the container user or socket permissions to match
-before mounting the socket.
+What each part does:
 
-## Verify with the live stack
+- `[[sources]]` tells dnsync where to find containers. `base_domain` is added
+  to each container name, and `host_ip` is the address every record points to.
+- `[[outputs]]` is the DNS server to write to. `password_ref` reads the
+  password from the `ADGUARD_PASSWORD` environment variable, so it never sits
+  in the file. Use a URL the dnsync container can reach; `localhost` inside a
+  container is the container itself.
+- `[state]` is where dnsync remembers which records it created. Keep this file;
+  without it, dnsync treats its old records as someone else's.
+- `[logging]` and `[retry]` control log output and how long dnsync keeps
+  retrying when the DNS server is unreachable.
 
-The `deploy/compose/live-test/` directory runs the daemon, AdGuard, and a
-labeled `whoami` workload together. The automated smoke test is the easiest
-end-to-end check the repo ships:
+[Configuration](configuration.md) lists every setting.
 
-```bash
-mise run live-test
+## 2. Add dnsync and a test container
+
+Create `compose.yaml` in the same directory:
+
+```yaml
+services:
+  dnsync:
+    image: ghcr.io/auron-labs/dnsync:latest
+    command: ["-config", "/etc/dnsync/config.toml"]
+    restart: unless-stopped
+    environment:
+      ADGUARD_PASSWORD: ${ADGUARD_PASSWORD:?set ADGUARD_PASSWORD}
+    volumes:
+      - ./config.toml:/etc/dnsync/config.toml:ro
+      - ./state:/var/lib/dnsync
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  whoami:
+    image: traefik/whoami
+    labels:
+      proxy.aliases: whoami
+      proxy.whoami.port: "80"
 ```
 
-What that covers:
+The two labels on `whoami` are what dnsync looks for:
 
-- initial managed rewrite creation
-- managed rewrite update and restore
-- manual-record safety across daemon restart
-- restart recovery
-- persisted removal grace and cancellation when the workload returns
-- dual stdout and file logging with `0600` permissions
-- stale AdGuard rewrite deletion after its workload is removed
+- `proxy.aliases: whoami` names the container. With `base_domain`, it becomes
+  `whoami.home.arpa`.
+- `proxy.whoami.port: "80"` gives that name a port. dnsync ignores a name
+  without one.
 
-The script tears the stack down with `docker compose ... down -v` and removes
-the temporary runtime bind-mount directories by default. To inspect the stack
-after it finishes, run `mise run live-test -- --keep-running` (or set
-`KEEP_RUNNING=1`); the script then prints the exact cleanup commands.
+dnsync reads the Docker socket to see containers and their labels. The socket
+gives full control of Docker, so treat the dnsync container as trusted. If you
+want to limit that, see
+[Use a Docker socket proxy](deployment.md#use-a-docker-socket-proxy).
 
-## CLI exit behavior
+## 3. Start it
 
-The binary has one flag: `-config <path>`.
+```bash
+export ADGUARD_PASSWORD='your-adguard-password'
+docker compose up -d
+docker compose logs dnsync
+```
 
-- Missing or empty `-config` exits with status 1 and writes `error: -config is required` to stderr.
-- Successful parse, validate, and secret resolution run the daemon until it
-  receives `SIGINT` or `SIGTERM`, at which point the context cancels and the
-  process exits cleanly.
-- All other startup failures (bad TOML, unknown keys, missing env vars, bad
-  endpoint scheme) exit 1 with the cause on stderr. The matching list lives
-  in [Troubleshooting](troubleshooting.md).
+A healthy start logs `starting dnsync runtime`, then `reconcile completed`.
+A reconcile is one pass in which dnsync compares your containers with the DNS
+server and makes any changes needed.
 
-## What to read next
+If dnsync exits instead, the last log line names the problem. Common ones are
+in [Troubleshooting](troubleshooting.md).
 
-- Edit your config with confidence: [Configuration](configuration.md).
-- Understand the safety rules before you trust label changes to delete
-  records: [Architecture](architecture.md).
-- Hit a problem you cannot decode: [Troubleshooting](troubleshooting.md).
-- Add a new provider or change the daemon: [Development](development.md).
+## 4. Check the record
+
+Ask your DNS server for the new name:
+
+```bash
+dig +short whoami.home.arpa @192.168.1.2
+```
+
+The answer should be your `host_ip`, `192.168.1.50`. In AdGuard Home, the
+record is listed under **Filters → DNS rewrites**.
+
+## 5. Change and remove the container
+
+dnsync watches Docker and reacts within moments of a change.
+
+**Point it somewhere else.** Add a third label to `whoami`, then run
+`docker compose up -d`:
+
+```yaml
+      proxy.whoami.host: "192.168.1.60"
+```
+
+dnsync updates `whoami.home.arpa` to answer `192.168.1.60` straight away.
+
+**Remove it.** Stop the container with `docker compose stop whoami`. dnsync
+waits 10 minutes before removing a record, so a quick restart doesn't make the
+name disappear. You can change this with `removal_grace_period` in
+[`[runtime]`](configuration.md#runtime).
+
+What happens next depends on your DNS server:
+
+- Cloudflare and Technitium DNS Server: dnsync deletes the record.
+- AdGuard Home, Pi-hole, and TelltaleDNS: dnsync keeps the record and logs
+  `blocked managed record cleanup without provenance`. These servers can't
+  tell dnsync's records apart from ones you created, so dnsync won't delete
+  them on its own. Delete the record on the DNS server and dnsync stops
+  tracking it.
+
+Renaming a container works the same way: dnsync creates the new name, and
+the old name goes through the removal steps above.
+
+[How dnsync works](architecture.md#removing-records) explains why.
+
+## Next steps
+
+- Label your real containers. [Container labels](configuration.md#container-labels)
+  covers multiple names, per-name addresses, and opting out.
+- Run dnsync as a systemd service instead of a container:
+  [Deployment](deployment.md#run-as-a-systemd-service).
+- Add another DNS server, or Cloudflare: [DNS servers](integrations.md).
