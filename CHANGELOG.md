@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/auron-labs/dnsync/compare/v0.4.0...v0.4.1) (2026-11-19)
+
+
+### Miscellaneous Chores
+
+* release v0.4.1 with published binaries ([6bb0448](https://github.com/auron-labs/dnsync/commit/6bb0448133197ec00c1b87a5aa17e614a759a3e7))
+
 ## [0.4.0](https://github.com/auron-labs/dnsync/compare/v0.2.1...v0.4.0) (2026-11-16)
 
 
