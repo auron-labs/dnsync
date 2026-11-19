@@ -71,3 +71,7 @@ checksum:
 
 changelog:
   disable: true
+
+release:
+  use_existing_draft: true
+  target_commitish: "{{ .Commit }}"

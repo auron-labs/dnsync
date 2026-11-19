@@ -17,6 +17,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
 
     steps:
       - name: Create GitHub App token
@@ -46,12 +47,19 @@ jobs:
       packages: write
 
     steps:
-      - name: Check out release tag
+      # Release-please creates a draft release, which has no git tag until
+      # GoReleaser publishes it, so build from the release commit instead.
+      - name: Check out release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ needs.release-please.outputs.sha }}
+
+      - name: Tag release commit locally
+        env:
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: git tag "$TAG_NAME"
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
