@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.3.0](https://github.com/auron-labs/dnsync/compare/v0.2.1...v0.3.0) (2026-11-16)
+## [0.4.0](https://github.com/auron-labs/dnsync/compare/v0.2.1...v0.4.0) (2026-11-16)
 
 
 ### Features
