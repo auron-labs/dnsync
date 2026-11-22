@@ -10,24 +10,11 @@
   "rangeStrategy": "pin",
   "packageRules": [
     {
-      "matchUpdateTypes": [
-        "patch",
-        "minor"
+      "matchPackageNames": [
+        "*"
       ],
-      "groupName": "non-major dependencies"
-    },
-    {
-      "matchManagers": [
-        "github-actions"
-      ],
-      "groupName": "github actions"
-    },
-    {
-      "matchManagers": [
-        "dockerfile",
-        "docker-compose"
-      ],
-      "groupName": "container images"
+      "groupName": "dependencies",
+      "separateMajorMinor": false
     }
   ]
 }
