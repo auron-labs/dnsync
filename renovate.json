@@ -8,26 +8,16 @@
   ],
   "dependencyDashboard": true,
   "rangeStrategy": "pin",
+  "schedule": [
+    "before 6am on monday"
+  ],
   "packageRules": [
     {
-      "matchUpdateTypes": [
-        "patch",
-        "minor"
+      "matchPackageNames": [
+        "*"
       ],
-      "groupName": "non-major dependencies"
-    },
-    {
-      "matchManagers": [
-        "github-actions"
-      ],
-      "groupName": "github actions"
-    },
-    {
-      "matchManagers": [
-        "dockerfile",
-        "docker-compose"
-      ],
-      "groupName": "container images"
+      "groupName": "dependencies",
+      "separateMajorMinor": false
     }
   ]
 }
